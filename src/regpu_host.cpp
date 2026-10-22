@@ -29,6 +29,8 @@ void GpuStart()
     c.sharpness = s.sharpness;
     c.userDir = UserDir();
     c.windowTitle = L"Project Gotham Racing 4";
+    // About 5,000 draws a frame in menus: 64 MB overflowed and dropped the scene's full-screen copy.
+    c.uploadRingMB = 256;
 
     regpu::Host& h = regpu::GetHost();
     h.base = g_base;
