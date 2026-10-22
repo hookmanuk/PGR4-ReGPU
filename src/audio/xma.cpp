@@ -16,6 +16,7 @@
 //   5: in0 address  6: in1 address  7: output address  8: work buffer
 //   9: output read offset 0-4
 #include <algorithm>
+#include <cstdlib>
 #include <filesystem>
 #include <chrono>
 #include <cstring>
@@ -47,6 +48,14 @@ constexpr uint32_t kBlockBytes = 256;
 constexpr uint32_t kPacketBytes = 2048;
 
 const bool g_traceXma = getenv("PGR4_TRACE_XMA") != nullptr;
+
+// The buffer addresses in a context. XMAInitializeContext stores guest virtual addresses (FM2's
+// library), but the title's own XMA library (PGR4, through the decoder's registers) stores
+// PHYSICAL addresses, as the console's kernel does: below 0x20000000, the 0xA0000000 view.
+uint32_t BufferAddress(uint32_t address)
+{
+    return address && address < 0x20000000 ? address + 0xA0000000 : address;
+}
 
 uint32_t Field(uint32_t ctx, int dword, int lo, int bits)
 {
@@ -82,6 +91,51 @@ bool MusicPacket(const uint8_t* p)
 std::set<uint32_t> g_enabled;
 std::once_flag g_started;
 
+// The hardware side (as Xenia's and ReXGlue's XmaDecoder): titles that use the XDK's XMA playback
+// library (PGR4) only create contexts through the kernel, then edit them in memory and start,
+// stop and reset them with the decoder's registers, one bit per hardware ID, 32 IDs a register.
+// The contexts are slots of one array, allocated at startup, whose physical address is in
+// ContextArrayAddress: the library reads it once when it starts (sub_82914398) and takes a
+// context's ID as its index in the array.
+constexpr uint32_t kHwContexts = 320; // Xenia's kContextCount
+constexpr uint32_t kRegArray = 0x7FEA1800, kRegKick = 0x7FEA1940, kRegLock = 0x7FEA1A40, kRegClear = 0x7FEA1A80; // 0600h, 0650h, 0690h, 06A0h (Xenia's xma_register_table.inc)
+uint32_t g_array = 0;
+bool g_slotUsed[kHwContexts] = {};
+// The hardware path (registers, as the console): how PGR4's XMA playback library works. On by
+// default. PGR4_NO_XMA_HW=1 brings back the kernel-call path of FM2's library (silent in PGR4).
+const bool g_hwPath = getenv("PGR4_NO_XMA_HW") == nullptr;
+
+// Bits of an XMA stream, MSB first.
+uint32_t ReadBits(const uint8_t* data, uint32_t bit, uint32_t count)
+{
+    const uint32_t byte = bit >> 3;
+    const uint64_t window = (uint64_t(data[byte]) << 32) | (uint64_t(data[byte + 1]) << 24) | (uint64_t(data[byte + 2]) << 16) | (uint64_t(data[byte + 3]) << 8) | data[byte + 4];
+    return uint32_t((window >> (40 - (bit & 7) - count)) & ((1ull << count) - 1));
+}
+
+// The frames of one 2 KB packet (positions in bits within the packet, headers included): the
+// header gives how many frames start in it (6 bits) and where the first starts (15 bits, after
+// the 32-bit header); each frame begins with its own length in bits (15 bits, headers of later
+// packets excluded when it runs over). Returns how many frames start here; `ends` gets, for each,
+// its end position relative to the packet start, over 16384 when it continues in the next packet.
+uint32_t ParsePacket(const uint8_t* packet, uint32_t* starts, uint32_t* lengths, uint32_t maxFrames)
+{
+    const uint32_t header = (uint32_t(packet[0]) << 24) | (uint32_t(packet[1]) << 16) | (uint32_t(packet[2]) << 8) | packet[3];
+    const uint32_t count = std::min<uint32_t>(header >> 26, maxFrames);
+    uint32_t pos = 32 + ((header >> 11) & 0x7FFF);
+    uint32_t n = 0;
+    for (; n < count && pos + 15 <= 16384; n++)
+    {
+        const uint32_t length = ReadBits(packet, pos, 15);
+        if (!length)
+            break;
+        starts[n] = pos;
+        lengths[n] = length;
+        pos += length;
+    }
+    return n;
+}
+
 struct Decoder
 {
     AVCodecContext* av = nullptr;
@@ -91,6 +145,7 @@ struct Decoder
     std::vector<int16_t> pcm; // decoded, interleaved, not yet in the output ring
     size_t pcmRead = 0;
     bool flush = true; // start of a stream or a jump: reset before the next packet
+    bool reopen = false; // a new logical stream (the context was cleared): drop the codec's history too
     bool starved = false;
     size_t packetsDecoded = 0, framesWritten = 0, framesDecoded = 0;
     // An input buffer whose packets are all decoded stays valid for the title until their audio
@@ -167,6 +222,17 @@ struct Decoder
     void Decode(const uint8_t* data)
     {
         const bool wasFlush = flush;
+        if (reopen)
+        {
+            // avcodec_flush_buffers does not clear FFmpeg's XMA overlap-add tail (the decoder has
+            // no flush callback), so the previous track's last frame bled into the next one
+            // (a jarring cut at every song change). Re-opening discards it (as ReXGlue does).
+            static LiveSwitch noReopen("PGR4_NO_XMA_REOPEN");
+            if (!noReopen)
+                Open(channels, rate);
+            reopen = false;
+            flush = false;
+        }
         if (flush)
         {
             avcodec_flush_buffers(av);
@@ -200,7 +266,24 @@ struct Decoder
         framesDecoded += (pcm.size() - pcmBefore) / channels;
         holdsTail = true;
         if (g_traceXma)
+        {
             Log("xma: decoded a packet: %zu frames (flush %d)", (pcm.size() - pcmBefore) / channels, int(wasFlush));
+            // PGR4_TRACE_XMA_FRAMES=1: the packet's own frame structure against what the codec returned.
+            static const bool traceFrames = getenv("PGR4_TRACE_XMA_FRAMES") != nullptr;
+            static int shown = 0;
+            if (traceFrames && shown < 120)
+            {
+                shown++;
+                uint32_t st[64], len[64];
+                const uint32_t n = ParsePacket(data, st, len, 64);
+                uint32_t within = 0, over = 0;
+                for (uint32_t i = 0; i < n; i++)
+                    (st[i] + len[i] <= 16384 ? within : over)++;
+                const uint32_t header = (uint32_t(data[0]) << 24) | (uint32_t(data[1]) << 16) | (uint32_t(data[2]) << 8) | data[3];
+                Log("xma: frames: header count %u first at %u | parsed %u starting here (%u complete, %u run over) | codec returned %zu samples = %zu frames of 512", header >> 26,
+                    32 + ((header >> 11) & 0x7FFF), n, within, over, (pcm.size() - pcmBefore) / channels, (pcm.size() - pcmBefore) / channels / 512);
+            }
+        }
     }
 };
 
@@ -223,9 +306,24 @@ bool WriteBlock(uint32_t ctx, Decoder& d)
     if (d.pcm.size() - d.pcmRead < perBlock)
         return false;
     const uint32_t blocks = Field(ctx, 0, 22, 5), write = Field(ctx, 0, 27, 5);
-    uint16_t* out = GuestPtr<uint16_t>(LoadBE32(ctx + 7 * 4) + write * kBlockBytes);
+    uint16_t* out = GuestPtr<uint16_t>(BufferAddress(LoadBE32(ctx + 7 * 4)) + write * kBlockBytes);
     for (size_t i = 0; i < perBlock; i++)
         out[i] = __builtin_bswap16(uint16_t(d.pcm[d.pcmRead + i]));
+    if (g_traceXma)
+    {
+        // PGR4_TRACE_XMA: the PCM handed to the title, per second (blocks written, loudest sample).
+        static uint32_t blocksSeen = 0, peak = 0;
+        static auto last = Clock::now();
+        blocksSeen++;
+        for (size_t i = 0; i < perBlock; i++)
+            peak = std::max<uint32_t>(peak, uint32_t(std::abs(int(int16_t(d.pcm[d.pcmRead + i])))));
+        if (Clock::now() - last >= std::chrono::seconds(1))
+        {
+            Log("xma: pcm out: %u blocks in the last second, peak %u", blocksSeen, peak);
+            blocksSeen = peak = 0;
+            last = Clock::now();
+        }
+    }
     d.pcmRead += perBlock;
     d.framesWritten += perBlock / std::max<uint32_t>(d.channels, 1);
     if (d.pcmRead > (1u << 16))
@@ -292,7 +390,7 @@ bool Step(uint32_t ctx)
         SetField(ctx, 2, 0, 26, 32);
     }
     const uint32_t packets = current ? Field(ctx, 1, 0, 12) : Field(ctx, 0, 0, 12);
-    const uint32_t buffer = LoadBE32(ctx + (5 + current) * 4);
+    const uint32_t buffer = BufferAddress(LoadBE32(ctx + (5 + current) * 4));
     const uint32_t packet = Field(ctx, 2, 0, 26) / kPacketBits;
     if (packet < packets)
     {
@@ -303,11 +401,52 @@ bool Step(uint32_t ctx)
                 Log("xma: %08X decode starts mid-packet: packet %u of %u, offset %u in it, the packet's first frame at %u", ctx, packet, packets, start,
                     32 + ((header >> 11) & 0x7FFF));
         }
+        if (g_traceXma)
+        {
+            // PGR4_TRACE_XMA: the first packets each context decodes (header dword: frame count
+            // bits 0-5? , first-frame offset bits 11-25, metadata 26-28, packet skip 29-31).
+            static std::map<uint32_t, int> dumped;
+            if (dumped[ctx]++ < 3)
+            {
+                const uint8_t* p = GuestPtr<uint8_t>(buffer + packet * kPacketBytes);
+                Log("xma: %08X packet %u of %u at %08X, read offset %u (%u bits into it), ch %u rate %u: %02X%02X%02X%02X %02X%02X%02X%02X %02X%02X%02X%02X %02X%02X%02X%02X",
+                    ctx, packet, packets, buffer, Field(ctx, 2, 0, 26), Field(ctx, 2, 0, 26) % kPacketBits, Field(ctx, 1, 29, 1) ? 2 : 1,
+                    Field(ctx, 1, 27, 2), p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9], p[10], p[11], p[12], p[13], p[14], p[15]);
+            }
+        }
         d.seeked = false;
         d.music = MusicPacket(GuestPtr<uint8_t>(buffer + packet * kPacketBytes));
         if (d.music)
             LOG_ONCE("xma: %08X is music (the first stream recognised)", ctx);
+        const size_t pcmBefore = d.pcm.size();
         d.Decode(GuestPtr<uint8_t>(buffer + packet * kPacketBytes));
+        // The loop ends at a frame, not at the end of its packet. The packet holding the loop end
+        // also holds what follows it (padding, or the next part of the file): keep only the frames
+        // that end at or before it. Left in, every pass of every looping layer ran some tens of
+        // milliseconds long, by a different amount each, so layers that should stay aligned (the
+        // menu music is 19 of them) drifted apart.
+        static LiveSwitch packetLoops("PGR4_XMA_PACKET_LOOPS"); // A/B: the old, packet-accurate loop
+        const uint32_t loopsNow = Field(ctx, 0, 12, 8), endNow = Field(ctx, 4, 0, 26);
+        if (!packetLoops && loopsNow && endNow / kPacketBits == packet)
+        {
+            const uint8_t* data = GuestPtr<uint8_t>(buffer + packet * kPacketBytes);
+            uint32_t st[64], len[64];
+            const uint32_t n = ParsePacket(data, st, len, 64);
+            const uint32_t start = packet * kPacketBits;
+            const uint32_t header = (uint32_t(data[0]) << 24) | (uint32_t(data[1]) << 16) | (uint32_t(data[2]) << 8) | data[3];
+            const uint32_t firstStart = 32 + ((header >> 11) & 0x7FFF);
+            uint32_t keep = 0;
+            if (packet > 0 && firstStart > 32 && start + firstStart <= endNow) // the frame carried over from the packet before
+                keep++;
+            for (uint32_t i = 0; i < n; i++)
+                if (st[i] + len[i] <= kPacketBits && start + st[i] + len[i] <= endNow)
+                    keep++;
+            const size_t target = pcmBefore + size_t(keep) * 512 * d.channels;
+            if (g_traceXma)
+                Log("xma: %08X loop end %u in packet %u: keeping %u of %zu frames", ctx, endNow, packet, keep, (d.pcm.size() - pcmBefore) / (512 * d.channels));
+            if (d.pcm.size() > target)
+                d.pcm.resize(target);
+        }
     }
 
     // Loop: when the packet holding the loop end is done and loops remain, continue from
@@ -318,7 +457,12 @@ bool Step(uint32_t ctx)
         if (loops != 255)
             SetField(ctx, 0, 12, 8, loops - 1);
         SetField(ctx, 2, 0, 26, Field(ctx, 3, 0, 26));
-        d.flush = true;
+        // The decoder carries on across a loop (its MDCT overlap, as the hardware's): resetting it
+        // here swallowed the first frames of every pass, a ~25 ms hole at each wrap. A new stream
+        // (a cleared context) does reset it. PGR4_XMA_LOOP_FLUSH=1 restores the old reset (A/B).
+        static LiveSwitch loopFlush("PGR4_XMA_LOOP_FLUSH");
+        if (loopFlush)
+            d.flush = true;
         return true;
     }
     const uint32_t offset = (packet + 1) * kPacketBits + 32;
@@ -333,6 +477,59 @@ bool Step(uint32_t ctx)
     return true;
 }
 
+// Clear (register 06A0h+): the context's buffers become invalid and its output ring empty.
+void ClearHwContext(uint32_t c)
+{
+    SetField(c, 0, 20, 2, 0);  // in0, in1 valid
+    SetField(c, 0, 27, 5, 0);  // output write offset
+    SetField(c, 1, 31, 1, 0);  // output valid
+    SetField(c, 9, 0, 5, 0);   // output read offset
+    if (auto it = g_decoders.find(c); it != g_decoders.end())
+    {
+        it->second.consumed[0] = it->second.consumed[1] = false;
+        it->second.holdsTail = false;
+        it->second.flush = true;
+        it->second.reopen = true;
+        it->second.pcm.clear();
+        it->second.pcmRead = 0;
+    }
+}
+
+// The kick, lock and clear registers, taken and zeroed atomically (the title sets them with
+// byte-reversed stores, so they read in host order).
+void PollHwRegisters()
+{
+    if (!g_array)
+        return;
+    for (uint32_t r = 0; r < kHwContexts / 32; r++)
+    {
+        auto take = [&](uint32_t reg) { return uint32_t(InterlockedExchange(reinterpret_cast<volatile LONG*>(GuestPtr<uint32_t>(reg + r * 4)), 0)); };
+        const uint32_t clear = take(kRegClear), lock = take(kRegLock), kick = take(kRegKick);
+        auto each = [&](uint32_t bits, auto&& fn) {
+            for (; bits; bits &= bits - 1)
+            {
+                fn(g_array + (r * 32 + uint32_t(__builtin_ctz(bits))) * kContextSize);
+            }
+        };
+        each(clear, [](uint32_t c) { ClearHwContext(c); });
+        each(lock, [](uint32_t c) { g_enabled.erase(c); });
+        each(kick, [](uint32_t c) {
+            g_enabled.insert(c);
+            // Worked at once (as Xenia's inline path): the title's next edit assumes the
+            // hardware has taken this one.
+            // Bounded: a looping stream can make progress forever without filling the ring.
+            for (uint32_t n = 0; n < 64 && Step(c); n++)
+                ;
+            if (g_traceXma)
+                Log("xma: kick %08X: %08X %08X %08X %08X %08X in0 %08X in1 %08X out %08X work %08X rd %08X", c, LoadBE32(c), LoadBE32(c + 4),
+                    LoadBE32(c + 8), LoadBE32(c + 12), LoadBE32(c + 16), LoadBE32(c + 20), LoadBE32(c + 24), LoadBE32(c + 28), LoadBE32(c + 32),
+                    LoadBE32(c + 36));
+        });
+        if (g_traceXma && (clear | lock | kick))
+            Log("xma: registers %u: kick %08X lock %08X clear %08X", r, kick, lock, clear);
+    }
+}
+
 void DecoderLoop()
 {
     SetThreadDescription(GetCurrentThread(), L"xma decoder");
@@ -341,17 +538,75 @@ void DecoderLoop()
     {
         next += std::chrono::milliseconds(2);
         std::this_thread::sleep_until(next);
-        std::lock_guard lock(g_mutex);
-        for (uint32_t ctx : g_enabled)
-            while (Step(ctx))
-                ;
+        std::vector<uint32_t> work;
+        {
+            std::lock_guard lock(g_mutex);
+            PollHwRegisters();
+            work.assign(g_enabled.begin(), g_enabled.end());
+        }
+        // The lock is held for one step at a time: the title's register stores (a lock waits out
+        // the context's work) must not wait for every context's decoding. A context locked
+        // meanwhile is skipped. Bounded per tick: a looping stream can make progress forever.
+        for (uint32_t ctx : work)
+            for (uint32_t n = 0; n < 64; n++)
+            {
+                std::lock_guard lock(g_mutex);
+                if (!g_enabled.count(ctx) || !Step(ctx))
+                    break;
+            }
     }
 }
 }
 
+// The title has just written the decoder's kick, lock or clear registers (its functions for them
+// are hooked, src/hooks/xma_lock.cpp): act on them now, as the hardware does. Holding the decoder
+// lock also waits out a context being worked, as a lock must (Xenia's XmaContext::Block).
+void XmaRegistersWritten();
+
+// At startup, before the title's audio starts: the context array and its address register.
+void XmaInit()
+{
+    if (!g_hwPath)
+        return;
+    // PGR4_XMA_HW_NOREG=1: the array exists but ContextArrayAddress stays 0 (bisecting the mute).
+    static const bool noReg = getenv("PGR4_XMA_HW_NOREG") != nullptr;
+    g_array = GuestAlloc(Heap::Physical, kHwContexts * kContextSize, 0x1000);
+    if (g_array && !noReg)
+        *GuestPtr<uint32_t>(kRegArray) = g_array & 0x1FFFFFFF; // read with lwbrx: host order
+    Log("xma: hardware contexts at %08X", g_array);
+}
+
+// A store from the recompiled code to the decoder's registers (PPC_MM_STORE_U32, ppc_hooks.h).
+void XmaMmioStore(uint32_t address)
+{
+    if (address >= kRegKick && address < kRegClear + 4 * (kHwContexts / 32))
+        XmaRegistersWritten();
+}
+
+void XmaRegistersWritten()
+{
+    if (!g_hwPath)
+        return;
+    std::lock_guard lock(g_mutex);
+    PollHwRegisters();
+}
+
 GUEST_EXPORT(XMACreateContext)
 {
-    const uint32_t context = GuestAlloc(Heap::Physical, kContextSize, 0x100);
+    uint32_t context = 0;
+    if (!g_array)
+        context = GuestAlloc(Heap::Physical, kContextSize, 0x100);
+    else
+    {
+        std::lock_guard lock(g_mutex);
+        for (uint32_t i = 0; i < kHwContexts && !context; i++)
+            if (!g_slotUsed[i])
+            {
+                g_slotUsed[i] = true;
+                context = g_array + i * kContextSize;
+                memset(GuestPtr(context), 0, kContextSize);
+            }
+    }
     StoreIfNonNull(ctx.r3.u32, context);
     std::call_once(g_started, [] {
         av_log_set_level(AV_LOG_ERROR);
@@ -371,7 +626,13 @@ GUEST_EXPORT(XMAReleaseContext)
             g_decoders.erase(it);
         }
     }
-    GuestFree(ctx.r3.u32);
+    if (g_array && ctx.r3.u32 >= g_array && ctx.r3.u32 < g_array + kHwContexts * kContextSize)
+    {
+        std::lock_guard lock(g_mutex);
+        g_slotUsed[(ctx.r3.u32 - g_array) / kContextSize] = false;
+    }
+    else
+        GuestFree(ctx.r3.u32);
     Return(ctx, 0);
 }
 

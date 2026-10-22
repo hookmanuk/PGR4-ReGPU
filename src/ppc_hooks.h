@@ -65,3 +65,15 @@ inline uint16_t ppc_float_to_half(float f)
             PPCIndirectMiss(ctx, ppcTarget_);                       \
         ppcFunc_(ctx, base);                                        \
     } while (0)
+
+// Stores to the XMA decoder's registers (0x7FEA0000-0x7FEAFFFF) take effect at once, as on the
+// console (kick, lock, clear: audio/xma.cpp). The recompiler emits these for MMIO stores only.
+void XmaMmioStore(uint32_t address);
+#define PPC_MM_STORE_U32(x, y)                         \
+    do                                                 \
+    {                                                  \
+        const uint32_t mmioAddress = (x);              \
+        PPC_STORE_U32(mmioAddress, y);                 \
+        if (mmioAddress - 0x7FEA0000u < 0x10000u)      \
+            XmaMmioStore(mmioAddress);                 \
+    } while (0)

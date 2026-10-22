@@ -1,6 +1,8 @@
 // Hang diagnostics: the host call stack of every thread in the process, logged when a
 // renderer wait runs far too long, so a lockup in the field says what each worker is
 // stuck in.
+#include <cstdio>
+#include <cstdlib>
 #include <string>
 
 #include <windows.h>
@@ -31,4 +33,37 @@ void LogAllHostThreadStacks(const char* why)
         CloseHandle(thread);
     }
     CloseHandle(snapshot);
+}
+
+// PGR4_STACKS_AT=<seconds>[,<seconds>...]: every thread's stack at those times after start (what a
+// subsystem that never gets going is waiting on).
+namespace
+{
+struct StacksAt
+{
+    StacksAt()
+    {
+        const char* v = getenv("PGR4_STACKS_AT");
+        if (!v)
+            return;
+        std::string times = v;
+        CreateThread(nullptr, 0, [](void* p) -> DWORD {
+            std::string* list = static_cast<std::string*>(p);
+            double last = 0;
+            for (size_t at = 0; at < list->size();)
+            {
+                const double t = atof(list->c_str() + at);
+                Sleep(DWORD((t - last) * 1000));
+                last = t;
+                char why[48];
+                snprintf(why, sizeof(why), "PGR4_STACKS_AT %.0f s", t);
+                LogAllHostThreadStacks(why);
+                const size_t comma = list->find(',', at);
+                at = comma == std::string::npos ? list->size() : comma + 1;
+            }
+            delete list;
+            return 0;
+        }, new std::string(times), 0, nullptr);
+    }
+} g_stacksAt;
 }

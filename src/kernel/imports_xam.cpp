@@ -764,6 +764,16 @@ GUEST_EXPORT(XMsgInProcessCall)
         Return(ctx, 0);
         return;
     }
+    static const bool traceXmp = getenv("PGR4_TRACE_XMP") != nullptr;
+    if (traceXmp && app == 0xFA && message != 0x00070009 && message != 0x0007000B)
+    {
+        // PGR4_TRACE_XMP=1: the media player messages, with the first dwords of their arguments.
+        char words[256];
+        int n = 0;
+        for (int i = 0; i < 10; i++)
+            n += snprintf(words + n, sizeof(words) - size_t(n), "%08X ", LoadBE32(args + uint32_t(i) * 4));
+        Log("xmp: message %08X, args at %08X (length %u): %s", message, args, ctx.r6.u32, words);
+    }
     if (app != 0xFA)
     {
         LOG_ONCE("XMsgInProcessCall to app %X (message %08X) not supported", app, message);
@@ -783,8 +793,9 @@ GUEST_EXPORT(XMsgInProcessCall)
         StoreIfNonNull(LoadBE32(args + 4), bits);
         break;
     }
-    case 0x0007001B: // get dashboard init state (client, state*)
+    case 0x0007001B: // get playback controller (client, controller*, locked*): the game (0), not locked
         StoreIfNonNull(LoadBE32(args + 4), 0);
+        StoreIfNonNull(LoadBE32(args + 8), 0);
         break;
     default:
         LOG_ONCE("XMP message %08X answered with success", message);
@@ -792,8 +803,73 @@ GUEST_EXPORT(XMsgInProcessCall)
     }
     Return(ctx, 0);
 }
-GUEST_EXPORT(XMsgStartIORequest) { FinishUi(ctx, ctx.r5.u32, X_ERROR_FUNCTION_FAILED); }
-GUEST_EXPORT(XMsgStartIORequestEx) { FinishUi(ctx, ctx.r5.u32, X_ERROR_FUNCTION_FAILED); }
+GUEST_EXPORT(XMsgStartIORequest)
+{
+    // (app, message, overlapped, buffer, buffer length)
+    static const bool traceXmp = getenv("PGR4_TRACE_XMP") != nullptr;
+    if (traceXmp)
+    {
+        char words[256];
+        int n = 0;
+        const uint32_t args = ctx.r6.u32;
+        for (int i = 0; args && i < 12; i++)
+            n += snprintf(words + n, sizeof(words) - size_t(n), "%08X ", LoadBE32(args + uint32_t(i) * 4));
+        Log("xmp: async app %X message %08X, overlapped %08X, args at %08X (length %u): %s", ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, args, ctx.r7.u32, words);
+    }
+    FinishUi(ctx, ctx.r5.u32, X_ERROR_FUNCTION_FAILED);
+}
+static std::string XmpWide(uint32_t a)
+{
+    std::string out;
+    for (uint32_t i = 0; a && i < 100; i++)
+    {
+        const uint16_t c = __builtin_bswap16(*GuestPtr<uint16_t>(a + i * 2));
+        if (!c)
+            break;
+        out += c < 128 ? char(c) : '?';
+    }
+    return out;
+}
+
+// PGR4_TRACE_XMP: what the pointers of a CreateTitlePlaylist carry.
+static void XmpTraceCreate(uint32_t args)
+{
+    for (int i : { 1, 3, 8 })
+    {
+        const uint32_t p = LoadBE32(args + uint32_t(i) * 4);
+        char words[320];
+        int n = 0;
+        for (int k = 0; p && k < 20; k++)
+            n += snprintf(words + n, sizeof(words) - size_t(n), "%08X ", LoadBE32(p + uint32_t(k) * 4));
+        Log("xmp:   arg[%d] -> %08X: %s", i, p, words);
+    }
+    Log("xmp:   name '%s'", XmpWide(LoadBE32(args + 20)).c_str());
+    const uint32_t songs = LoadBE32(args + 4);
+    for (uint32_t k = 0; k < 3; k++)
+        for (uint32_t f = 0; f < 9; f++)
+        {
+            const uint32_t v = LoadBE32(songs + k * 36 + f * 4);
+            if (f < 5 && v > 0x40000000 && v < 0xA0000000)
+                Log("xmp:   song %u field %u -> '%s'", k, f, XmpWide(v).c_str());
+        }
+}
+
+GUEST_EXPORT(XMsgStartIORequestEx)
+{
+    static const bool traceXmp = getenv("PGR4_TRACE_XMP") != nullptr;
+    if (traceXmp && ctx.r4.u32 == 0x0007000D)
+        XmpTraceCreate(ctx.r6.u32);
+    if (traceXmp)
+    {
+        char words[400];
+        int n = 0;
+        const uint32_t args = ctx.r6.u32;
+        for (int i = 0; args && i < 16; i++)
+            n += snprintf(words + n, sizeof(words) - size_t(n), "%08X ", LoadBE32(args + uint32_t(i) * 4));
+        Log("xmp: async-ex app %X message %08X, overlapped %08X, args at %08X (length %u): %s", ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, args, ctx.r7.u32, words);
+    }
+    FinishUi(ctx, ctx.r5.u32, X_ERROR_FUNCTION_FAILED);
+}
 GUEST_EXPORT(XMsgCancelIORequest) { Return(ctx, X_ERROR_SUCCESS); }
 GUEST_EXPORT(XamSessionCreateHandle) { StoreIfNonNull(ctx.r3.u32, CreateHandle(std::make_shared<EnumeratorObject>())); Return(ctx, X_ERROR_SUCCESS); }
 GUEST_EXPORT(XamSessionRefObjByHandle) { StoreIfNonNull(ctx.r4.u32, 0); Return(ctx, X_ERROR_FUNCTION_FAILED); }

@@ -169,7 +169,9 @@ void AudioLoop(PPCContext& ctx)
 }
 }
 
-void AudioInit() {}
+void XmaInit(); // xma.cpp
+
+void AudioInit() { XmaInit(); }
 
 GUEST_EXPORT(XAudioRegisterRenderDriverClient)
 {

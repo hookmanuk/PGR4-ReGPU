@@ -23,6 +23,9 @@ PPC_FUNC(sub_826B0FE0)
         const uint32_t n = seen[s]++;
         if (n < 3 || n % 1000 == 0)
             Log("game: %s (lr %08X, %u times)", s.c_str(), uint32_t(ctx.lr), n + 1);
+        std::string CurrentHostStack(int maxFrames);
+        if (n == 0)
+            Log("game:   from %s", CurrentHostStack(12).c_str());
     }
     __imp__sub_826B0FE0(ctx, base);
 }
