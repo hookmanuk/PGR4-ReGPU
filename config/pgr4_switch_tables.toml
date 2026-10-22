@@ -19302,3 +19302,24 @@ labels = [
     0x828F21EC,
 ]
 
+
+[[switch]]
+base = 0x824ED274
+r = 11
+default = 0x824ED2C4
+labels = [
+    0x824ED2C4,
+    0x824ED2D4,
+    0x824ED2CC,
+    0x824ED2CC,
+    0x824ED2CC,
+    0x824ED2CC,
+    0x824ED2CC,
+    0x824ED2CC,
+    0x824ED2CC,
+    0x824ED2CC,
+    0x824ED2CC,
+    0x824ED2CC,
+    0x824ED2CC,
+    0x824ED2C4,
+]
