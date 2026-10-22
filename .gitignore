@@ -13,3 +13,4 @@ out/
 build/
 __pycache__/
 *.pyc
+out_*.log
