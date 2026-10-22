@@ -1,0 +1,36 @@
+#pragma once
+#include <cstdint>
+#include <string>
+
+// Player settings: Documents\pgr4\settings.ini. Environment
+// variables (PGR4_RESOLUTION, PGR4_RENDER_SCALE, PGR4_MAX_FPS, PGR4_VSYNC, PGR4_FULLSCREEN,
+// PGR4_PROFILE, PGR4_SKIP_INTRO) override the file for testing.
+struct Settings
+{
+    std::string profile = "Player";     // the gamer profile name the game sees
+    uint32_t width = 1280, height = 720; // output resolution
+    uint32_t aspectW = 0, aspectH = 0;   // forced aspect ratio (0 = from the resolution)
+    bool fullscreen = false;             // borderless fullscreen on the primary display
+    bool vsync = true;
+    uint32_t maxFps = 60;                // frame cap, 30-360 (the physics tick rate)
+    bool enhance = false;                // enhanced lighting post pass (experimental)
+    bool skipIntro = false;              // straight to the title screen (no legal text or splash videos)
+    uint32_t language = 1;               // the console language the game sees (XGetLanguage: 1 English, 3 German, ...)
+    uint32_t msaa = 1;                   // anti-aliasing samples per pixel: 1 (off), 2, 4 or 8
+    // Upscaling: the 3D scene renders smaller and is upscaled before post-processing and
+    // the HUD, which stay at full resolution.
+    enum class Upscaler : uint32_t { Off, Fsr1, Fsr3, Dlss };
+    Upscaler upscaler = Upscaler::Off;
+    uint32_t quality = 1;   // 0 native (anti-aliasing only), 1 quality, 2 balanced, 3 performance, 4 ultra performance
+    float sharpness = 0.5f; // 0-1
+    // The scene's resolution as a fraction of the output (1 when upscaling is off).
+    float SceneScale() const;
+
+    // The size the game renders at: the resolution, narrowed or shortened to the forced
+    // aspect ratio (the rest of the screen is black bars).
+    void RenderSize(uint32_t& w, uint32_t& h) const;
+};
+
+// Loaded on first use (after RuntimeInit has set the user directory).
+Settings& GetSettings();
+void SaveSettings();

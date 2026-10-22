@@ -14,3 +14,6 @@ build/
 __pycache__/
 *.pyc
 out_*.log
+thirdparty/fidelityfx/
+thirdparty/ffmpeg/
+*.log
