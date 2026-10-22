@@ -2,7 +2,7 @@
 
 Project Gotham Racing 4 (Bizarre Creations, 2007) as a native PC port, built the same way as the
 Forza Motorsport 2 port (`D:\fm2-port`): XenonRecomp for the code, FM2's runtime for the console's
-kernel, and **ReGPU** (`ReGPU-main.zip`, the framework extracted from FM2's renderer) for graphics.
+kernel, and **ReGPU** (`thirdparty/ReGPU`, a submodule of `zer0ducksgiven/ReGPU`: the framework extracted from FM2's renderer) for graphics.
 The second purpose is to prove ReGPU on a game it wasn't built from: every renderer problem found here
 is either a PGR4 quirk (fixed in this port, through ReGPU's hooks) or a ReGPU gap (fixed in ReGPU).
 
@@ -13,7 +13,6 @@ is either a PGR4 quirk (fixed in this port, through ReGPU's hooks) or a ReGPU ga
 | `Project Gotham Racing 4 (World) (...).iso` | Retail disc (XGD2, 7.8 GB image, 6.2 GB of files, 1,033 files). Title ID `4D5307F9`. |
 | `TU_16L61VP_0000004000000.00000000000G1` | Title Update #2 (LIVE package): `default.xexp`, `gw.xexp`, `Pgr4TitleUpdate.bin` |
 | `4D5307F9/00000002/638152C7...` | DLC "Vehicle Pack 1" (LIVE, content type 2, the same kind of package as FM2's DLC) |
-| `ReGPU-main.zip` | ReGPU, identical to `zer0ducksgiven/ReGPU` main at the time of writing |
 
 ## What the disc contains
 
@@ -46,7 +45,7 @@ recompiled code.
 ## The plan, following FM2
 
 ### Phase 1: project and code (no graphics yet)
-1. The FM2 layout: `src/`, `tools/`, `thirdparty/` (XenonRecomp; ReGPU's fork), `out/` for generated
+1. The FM2 layout: `src/`, `tools/`, `thirdparty/` (XenonRecomp; ReGPU as a submodule), `out/` for generated
    code (never committed).
 2. Extract the disc (`tools/xiso.py`), apply Title Update #2 to `default.xex` (FM2's loader and
    `xexp` handling), XenonRecomp it with a PGR4 TOML: entry point, function boundaries,
@@ -93,8 +92,9 @@ recompiled code.
 
 1. **Geometry Wars**: out of scope for now.
 2. **Networking**: offline only.
-3. **ReGPU**: a fork, copied into this repo (`thirdparty/ReGPU`) and changed freely here. Console-behaviour
-   fixes are worth offering back to `zer0ducksgiven/ReGPU` by hand.
+3. **ReGPU**: a git submodule of `zer0ducksgiven/ReGPU` at `thirdparty/ReGPU`. Every ReGPU improvement made
+   here is committed and pushed to ReGPU's `main`, then this repo moves its pointer forward. PGR4-specific
+   code stays in this repo (through ReGPU's hooks), never in ReGPU.
 4. **Repo**: private GitHub repo. Game files (disc image, title update, DLC, anything extracted from them)
    are never committed.
 
