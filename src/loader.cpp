@@ -233,15 +233,12 @@ void LoadTitle(const std::filesystem::path& xexPath)
     if (image.base != PPC_IMAGE_BASE)
         Fatal("%s: image base %08zX does not match the recompiled code (%08llX); wrong default.xex?", xexPath.string().c_str(), image.base, PPC_IMAGE_BASE);
 
-    // PE headers, then every section.
-    memcpy(GuestPtr(image.base), image.data.get(), 0x600);
+    // The whole image, not just the PE sections: XEX resources (the UI's Lua script archive at 0x82CC0000)
+    // live in the image outside any section.
+    memcpy(GuestPtr(image.base), image.data.get(), image.size);
     uint32_t textStart = 0, textEnd = 0;
     for (const Section& s : image.sections)
     {
-        // .reloc runs past the end of XenonUtils' buffer and is not needed.
-        if (s.name == ".reloc")
-            continue;
-        memcpy(GuestPtr(uint32_t(s.base)), s.data, s.size);
         if (s.name == ".text")
         {
             textStart = uint32_t(s.base);

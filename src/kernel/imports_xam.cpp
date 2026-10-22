@@ -127,6 +127,25 @@ GUEST_EXPORT(XamUserGetName)
     Return(ctx, X_ERROR_SUCCESS);
 }
 
+GUEST_EXPORT(XamUserGetSigninInfo)
+{
+    // (user, flags, X_USER_SIGNIN_INFO*): { u64 xuid; u32 ?; u32 signinState; u32 ?; u32 ?; char name[16] }
+    const uint32_t info = ctx.r5.u32;
+    if (ctx.r3.u32 != 0 || !info)
+    {
+        Return(ctx, X_ERROR_NO_SUCH_USER);
+        return;
+    }
+    memset(GuestPtr(info), 0, 0x28);
+    StoreBE64(info, Xuid());
+    StoreBE32(info + 0x0C, 1); // signed in locally
+    strncpy(GuestPtr<char>(info + 0x18), GetSettings().profile.c_str(), 15);
+    Return(ctx, X_ERROR_SUCCESS);
+}
+
+// Where the system's notification pop-ups appear: nothing shows them here.
+GUEST_EXPORT(XNotifyPositionUI) { Return(ctx, 0); }
+
 GUEST_EXPORT(XamUserCheckPrivilege)
 {
     // (user, mask, result*)

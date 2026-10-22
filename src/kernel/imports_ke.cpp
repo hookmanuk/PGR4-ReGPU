@@ -820,12 +820,18 @@ GUEST_EXPORT(ExGetXConfigSetting)
     case 0x0003000A: value = 0x00040000; break; // user: video flags (widescreen)
     case 0x00020002: value = 0x00800000; break; // console: AV region
     case 0x00030007: value = 0; break;          // user: retail flags
+    case 0x0003000E: value = 103, valueSize = 1; break; // user: country (one byte; 103 United States)
     default:
         LOG_ONCE("ExGetXConfigSetting: unknown setting %04X/%04X, returning 0", category, setting);
         break;
     }
     if (buffer && size >= valueSize)
-        StoreBE32(buffer, value);
+    {
+        if (valueSize == 1)
+            *GuestPtr<uint8_t>(buffer) = uint8_t(value);
+        else
+            StoreBE32(buffer, value);
+    }
     StoreIfNonNull(ctx.r7.u32, valueSize);
     Return(ctx, X_STATUS_SUCCESS);
 }
