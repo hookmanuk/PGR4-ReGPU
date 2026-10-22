@@ -1,0 +1,15 @@
+# Game files: copyrighted, never committed
+*.iso
+TU_*
+4D5307F9/
+*.xex
+*.xexp
+*.zip
+game/
+extracted/
+
+# Generated
+out/
+build/
+__pycache__/
+*.pyc
