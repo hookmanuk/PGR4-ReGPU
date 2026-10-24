@@ -476,6 +476,66 @@ bool ReadPad(uint32_t user, PadState& s)
                 s.buttons |= XINPUT_GAMEPAD_START | XINPUT_GAMEPAD_A;
         }
     }
+    // PGR4_RECORD_INPUT=<file>: player 1's input (pad and keyboard) written as it changes, with the time
+    // since the title first read the pad. PGR4_REPLAY_INPUT=<file> plays such a recording back instead
+    // of the live input (then holds its last state; PGR4_REPLAY_EXIT=<seconds> quits that long after its
+    // end), so a route to a rendering bug can be repeated without a person. (From the FM2 port.)
+    if (user == 0)
+    {
+        static const auto epoch = Clock::now();
+        const double now = std::chrono::duration<double>(Clock::now() - epoch).count();
+        static FILE* record = getenv("PGR4_RECORD_INPUT") ? fopen(getenv("PGR4_RECORD_INPUT"), "w") : nullptr;
+        struct Sample
+        {
+            double t;
+            PadState p;
+        };
+        static const std::vector<Sample> replay = [] {
+            std::vector<Sample> v;
+            if (FILE* f = getenv("PGR4_REPLAY_INPUT") ? fopen(getenv("PGR4_REPLAY_INPUT"), "r") : nullptr)
+            {
+                Sample x;
+                int b, lt, rt, lx, ly, rx, ry;
+                while (fscanf(f, "%lf %x %d %d %d %d %d %d", &x.t, &b, &lt, &rt, &lx, &ly, &rx, &ry) == 8)
+                {
+                    x.p.buttons = uint16_t(b);
+                    x.p.leftTrigger = uint8_t(lt);
+                    x.p.rightTrigger = uint8_t(rt);
+                    x.p.lx = int16_t(lx), x.p.ly = int16_t(ly), x.p.rx = int16_t(rx), x.p.ry = int16_t(ry);
+                    v.push_back(x);
+                }
+                fclose(f);
+                Log("input: replaying %zu changes over %.1f s", v.size(), v.empty() ? 0.0 : v.back().t);
+            }
+            return v;
+        }();
+        if (!replay.empty())
+        {
+            size_t i = 0;
+            while (i + 1 < replay.size() && replay[i + 1].t <= now)
+                i++;
+            s = now >= replay[0].t ? replay[i].p : PadState{};
+            static const double exitAfter = getenv("PGR4_REPLAY_EXIT") ? atof(getenv("PGR4_REPLAY_EXIT")) : -1;
+            if (exitAfter >= 0 && now > replay.back().t + exitAfter)
+            {
+                Log("input: replay finished");
+                fflush(nullptr);
+                ExitProcess(0);
+            }
+        }
+        else if (record)
+        {
+            static PadState last{};
+            static bool first = true;
+            if (first || memcmp(&last, &s, sizeof(s)) != 0)
+            {
+                fprintf(record, "%.3f %04X %u %u %d %d %d %d\n", now, s.buttons, s.leftTrigger, s.rightTrigger, s.lx, s.ly, s.rx, s.ry);
+                fflush(record);
+                last = s;
+                first = false;
+            }
+        }
+    }
     // The debug server's input (debug.cpp) on top of everything else.
     if (regpu::DebugPad d; user == 0 && regpu::DebugPadState(d))
     {
