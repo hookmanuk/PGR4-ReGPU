@@ -155,6 +155,8 @@ function render() {
   const chip = (cls, text, tip) => { const c = el("span", "chip " + cls); c.append(el("span", "dot"), text); if (tip) c.dataset.tip = tip; chips.append(c) }
   chip(s.checks.game ? "ok" : "bad", s.checks.game ? "Game files" : "Game files missing", "The game built from your disc, in the install's game folder.")
   chip(s.checks.update ? "ok" : "warn", s.checks.update ? "Title update" : "No title update", "The title update (needed for DLC), in Documents\\pgr4\\update.")
+  const zeroCopyTip = "Fast memory sharing between the game and your GPU (Direct3D 12 zero-copy). The game found it could not use it, so it copies data every frame: lower performance and hitches. Updating Windows and your GPU driver usually fixes it (Windows 11 23H2 or newer with a 2024 or newer driver works best)."
+  if (s.system && !s.system.zeroCopy) chip("warn", "Reduced performance", zeroCopyTip)
   chip(s.checks.running ? "warn" : "ok", s.checks.running ? "Game running" : "Not running")
 
   // play page
@@ -166,7 +168,7 @@ function render() {
   $("lang-note").textContent = o.missingLanguages.length
     ? `Your disc also has ${o.missingLanguages.join(", ")} text. Those can't be picked yet.` : ""
   for (const b of $("display").children) b.classList.toggle("on", (b.dataset.full === "1") === set.fullscreen)
-  for (const k of ["vsync", "enhance", "skipIntro"]) $(k).classList.toggle("on", !!set[k])
+  for (const k of ["vsync", "enhance", "skipIntro", "lowPerformance"]) $(k).classList.toggle("on", !!set[k])
 
   const lang = o.languages.find((l) => l.id === set.language)
   const aspect = o.aspects.find((a) => a.value === set.aspect)
@@ -183,6 +185,8 @@ function render() {
   cl.replaceChildren()
   const item = (ok, text) => { const d = el("div", "check-item " + (ok ? "ok" : "bad")); d.append(el("span", "dot"), text); cl.append(d) }
   item(s.checks.exe, s.checks.exe ? "pgr4.exe found" : "pgr4.exe is missing from this install")
+  if (s.system && !s.system.zeroCopy)
+    item(false, `Your PC may get reduced performance and hitches: the game can't share memory with your GPU. Update Windows and your GPU driver (you have ${s.system.os}${s.system.driver ? ", driver " + s.system.driver : ""})`)
   item(s.checks.game, s.checks.game ? "Game files ready" : "Game files missing: run the installer again")
   item(s.shaders.exists, s.shaders.exists ? `Shaders compiled (${s.shaders.shaders.toLocaleString()})` : "First start compiles shaders (a few minutes)")
   if (s.dlc.length) item(true, `${s.dlc.filter((d) => d.enabled).length} of ${s.dlc.length} DLC packs on`)
@@ -283,7 +287,7 @@ $("maxFps").onchange = (e) => change({ maxFps: +e.target.value })
 $("msaa").onchange = (e) => change({ msaa: +e.target.value })
 $("language").onchange = (e) => change({ language: +e.target.value })
 $("display").onclick = (e) => { const b = e.target.closest("button"); if (b) change({ fullscreen: b.dataset.full === "1" }) }
-for (const k of ["vsync", "enhance", "skipIntro"]) $(k).onclick = () => change({ [k]: !state.settings[k] })
+for (const k of ["vsync", "enhance", "skipIntro", "lowPerformance"]) $(k).onclick = () => change({ [k]: !state.settings[k] })
 
 // ---- actions
 

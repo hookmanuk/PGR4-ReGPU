@@ -24,6 +24,7 @@ void GpuStart()
     c.maxFps = s.maxFps;
     c.enhance = s.enhance;
     c.msaa = s.msaa;
+    c.lowPerformance = s.lowPerformance;
     c.upscaler = regpu::Config::Upscaler(uint32_t(s.upscaler));
     c.quality = s.quality;
     c.sharpness = s.sharpness;

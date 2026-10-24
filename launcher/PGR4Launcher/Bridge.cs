@@ -211,6 +211,7 @@ public sealed class Bridge(CoreWebView2 web, Form owner)
                 missingLanguages = new[] { "CZ", "HU" }.Where(c => Directory.Exists(Path.Combine(Paths.GameDir, "loc", c))).ToArray(),
             },
             shaders = ShaderCache.Get(),
+            system = SystemCheck.Get(),
             dlc = Dlc.List(),
             mods = Dlc.Mods(),
         };

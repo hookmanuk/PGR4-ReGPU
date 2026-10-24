@@ -61,7 +61,7 @@ target_link_libraries(pgr4 PRIVATE regpu pgr4_ppc XenonUtils synchronization win
 target_compile_definitions(pgr4 PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
 target_compile_options(pgr4 PRIVATE -gline-tables-only)
 target_link_options(pgr4 PRIVATE /STACK:0x1000000 /DEBUG)
-target_link_libraries(pgr4 PRIVATE dbghelp xaudio2 bcrypt winhttp)
+target_link_libraries(pgr4 PRIVATE dbghelp xaudio2 bcrypt winhttp d3d12 dxgi) # d3d12, dxgi: sysinfo.cpp
 # Microsoft's HLSL compiler beside pgr4.exe (ReGPU loads it from there; Wine's can't compile its shaders).
 add_custom_command(TARGET pgr4 POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different "${REGPU_D3DCOMPILER}" $<TARGET_FILE_DIR:pgr4>)
 

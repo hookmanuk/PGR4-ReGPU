@@ -72,6 +72,8 @@ void Load()
             g_settings.skipIntro = value == "1";
         else if (key == "msaa")
             g_settings.msaa = uint32_t(atoi(value.c_str()));
+        else if (key == "low_performance")
+            g_settings.lowPerformance = value == "1";
         else if (key == "upscaler")
             g_settings.upscaler = ParseUpscaler(value);
         else if (key == "upscale_quality")
@@ -112,6 +114,8 @@ void Load()
         g_settings.language = 1;
     if (const char* v = getenv("PGR4_SKIP_INTRO"))
         g_settings.skipIntro = atoi(v) != 0;
+    if (const char* v = getenv("PGR4_LOW_PERFORMANCE"))
+        g_settings.lowPerformance = atoi(v) != 0;
     if (const char* v = getenv("PGR4_MSAA"))
         g_settings.msaa = uint32_t(atoi(v));
     g_settings.msaa = g_settings.msaa >= 8 ? 8 : g_settings.msaa >= 4 ? 4 : g_settings.msaa >= 2 ? 2 : 1;
@@ -175,6 +179,7 @@ void SaveSettings()
     out << "skip_intro=" << (s.skipIntro ? 1 : 0) << "\n";
     out << "language=" << s.language << "\n";
     out << "msaa=" << s.msaa << "\n";
+    out << "low_performance=" << (s.lowPerformance ? 1 : 0) << "\n";
     out << "upscaler=" << UpscalerName(s.upscaler) << "\n";
     out << "upscale_quality=" << s.quality << "\n";
     out << "sharpness=" << s.sharpness << "\n";

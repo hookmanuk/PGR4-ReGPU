@@ -13,6 +13,8 @@
 
 void CrashHandlerInit();
 
+void LogSystemInfo();
+
 int main(int argc, char** argv)
 {
     CrashHandlerInit();
@@ -31,6 +33,7 @@ int main(int argc, char** argv)
         }
     }
     RuntimeInit(gameDir); // also starts ReGPU (regpu_host.cpp) and its debug server (REGPU_DEBUG=1)
+    LogSystemInfo(); // sysinfo.cpp: what the player's PC is, for bug reports (needs the user folder)
     ThreadSystemInit(g_title.tlsTemplate, g_title.tlsDataSize, g_title.tlsSlotCount);
 
     void StartThreadProfiler();
