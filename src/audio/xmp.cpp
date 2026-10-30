@@ -43,6 +43,8 @@ extern "C"
 #include "log.h"
 #include "memory.h"
 
+void BroadcastNotification(uint32_t id, uint32_t data); // kernel/imports_xam.cpp
+
 namespace
 {
 constexpr uint32_t kOk = 0, kFail = 0x80004005;
@@ -56,6 +58,8 @@ struct Song
     std::string path; // guest
     std::string title, artist, album;
     uint32_t handle = 0;
+    std::u16string text[5]; // title, artist, album, album artist, genre (for XMPGetCurrentSong)
+    uint32_t track = 0, duration = 0, format = 0;
 };
 
 struct Playlist
@@ -115,6 +119,12 @@ std::string Wide(uint32_t address)
         }
     }
     return out;
+}
+
+// XN_XMP_STATECHANGED with the player's state: the game then asks for the song (XMPGetCurrentSong).
+void NotifyState()
+{
+    BroadcastNotification(0x0A000001, g_state);
 }
 
 // The song order for the playlist: as given, or shuffled (the current song first).
@@ -270,12 +280,14 @@ void DecoderMain()
                 if (Advance(1))
                 {
                     g_generation++;
+                    NotifyState();
                     if (Trace())
                         Log("xmp: song finished, next");
                 }
                 else
                 {
                     g_state = kIdle;
+                    NotifyState();
                     if (Trace())
                         Log("xmp: playlist finished");
                 }
@@ -487,6 +499,17 @@ uint32_t XmpMessage(uint32_t message, uint32_t args, uint32_t length)
             s.title = Wide(LoadBE32(d + 4));
             s.artist = Wide(LoadBE32(d + 8));
             s.album = Wide(LoadBE32(d + 12));
+            for (int k = 0; k < 5; k++)
+                for (uint32_t a = LoadBE32(d + 4 + k * 4), n = 0; a && n < 39; n++)
+                {
+                    const char16_t c = char16_t(__builtin_bswap16(*GuestPtr<uint16_t>(a + n * 2)));
+                    if (!c)
+                        break;
+                    s.text[k] += c;
+                }
+            s.track = LoadBE32(d + 24);
+            s.duration = LoadBE32(d + 28);
+            s.format = LoadBE32(d + 32);
             s.handle = g_nextSong++;
             if (handles)
                 StoreBE32(handles + i * 4, s.handle);
@@ -538,6 +561,7 @@ uint32_t XmpMessage(uint32_t message, uint32_t args, uint32_t length)
         BuildOrder(it->second, first);
         g_state = kPlaying;
         StartCurrent();
+        NotifyState();
         EnsureThreads();
         if (Trace())
             Log("xmp: play playlist %08X from song %zu", h, first);
@@ -556,14 +580,37 @@ uint32_t XmpMessage(uint32_t message, uint32_t args, uint32_t length)
         g_state = kIdle;
         g_ring.clear();
         g_generation++;
+        NotifyState();
         return kOk;
     case 0x00070006: // XMPNext
     case 0x00070007: // XMPPrevious
         if (g_state != kIdle && Advance(message == 0x00070006 ? 1 : -1))
+        {
             StartCurrent();
+            NotifyState();
+        }
         return kOk;
-    case 0x0007000E: // XMPGetCurrentSong (client, info*, ?)
-        return g_state == kIdle ? kFail : kOk;
+    case 0x0007000E: // XMPGetCurrentSong (client, ?, info*)
+    {
+        // The song now playing (XMP_SONGINFO, 0x3E0 bytes: handle, then from 0x240 title, artist, album,
+        // album artist and genre, 40 UTF-16 characters each, track, duration, format; as Xenia). It was
+        // answered without filling the info: the in-race toast named a song other than the one playing.
+        const Song* song = g_state == kIdle ? nullptr : CurrentSong();
+        const uint32_t info = Arg(args, 2);
+        if (!song || !info)
+            return kFail;
+        memset(GuestPtr<uint8_t>(info), 0, 0x3E0);
+        StoreBE32(info, song->handle);
+        for (int k = 0; k < 5; k++)
+            for (size_t n = 0; n < song->text[k].size(); n++)
+                *GuestPtr<uint16_t>(info + 0x240 + uint32_t(k) * 80 + uint32_t(n) * 2) = __builtin_bswap16(uint16_t(song->text[k][n]));
+        StoreBE32(info + 0x3D0, song->track);
+        StoreBE32(info + 0x3D4, song->duration);
+        StoreBE32(info + 0x3D8, song->format);
+        if (Trace())
+            Log("xmp: current song %08X %s", song->handle, song->title.c_str());
+        return kOk;
+    }
     default:
         static std::atomic<int> logged{ 0 };
         if (logged++ < 20)

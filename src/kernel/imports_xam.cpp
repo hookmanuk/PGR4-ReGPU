@@ -260,6 +260,15 @@ namespace
 std::vector<std::weak_ptr<ListenerObject>> g_listeners;
 }
 
+// Queues a notification for every listener whose areas mask takes it (area = id bits 25-30, as Xenia).
+void BroadcastNotification(uint32_t id, uint32_t data)
+{
+    std::lock_guard lock(g_listenerMutex);
+    for (auto& weak : g_listeners)
+        if (auto l = weak.lock(); l && (l->mask & (1ull << ((id >> 25) & 0x3F))))
+            l->queue.push_back({ id, data });
+}
+
 GUEST_EXPORT(XamNotifyCreateListener)
 {
     // (areas mask (u64), unknown)
