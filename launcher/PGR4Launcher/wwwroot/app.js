@@ -467,7 +467,7 @@ $("prof-merge").onclick = async () => {
   if (from) await profileCall("profiles.mergePhotos", { from, into: profileSel }, (r) => `${r.copied} photo${r.copied === 1 ? "" : "s"} copied.`)
 }
 $("prof-delete").onclick = async () => {
-  if (!await confirmBox(`Delete ${profileSel}?`, "Its career, garage, liveries and photos are deleted. A backup is made first, so you can restore it from the Backups list.", "Delete")) return
+  if (!await confirmBox("Are you sure you want to delete this profile?", `${profileSel}: its career, garage, liveries and photos are deleted. A backup is made first, so you can restore it from the Backups list.`, "Delete")) return
   await profileCall("profiles.delete", { name: profileSel }, "Deleted (a backup was kept).")
   refresh()
 }

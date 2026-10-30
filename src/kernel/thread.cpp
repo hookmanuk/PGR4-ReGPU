@@ -4,6 +4,7 @@
 #include <chrono>
 #include <string>
 #include <deque>
+#include <array>
 #include <map>
 #include <thread>
 #include <unordered_map>
@@ -537,6 +538,7 @@ void StartThreadProfiler()
     const uint32_t target = uint32_t(atoi(env)); // 0 with "w": the first draw piece worker
     std::thread([target] {
         std::unordered_map<std::string, uint64_t> counts;
+        std::map<std::array<uint32_t, 3>, uint64_t> rvas; // the address, then its callers (PGR4_SAMPLE_CALLERS)
         uint64_t samples = 0;
         auto lastLog = std::chrono::steady_clock::now();
         for (;;)
@@ -615,6 +617,14 @@ void StartThreadProfiler()
                 if (name == "?" && GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                                          reinterpret_cast<LPCSTR>(c.Rip), &module) && GetModuleFileNameA(module, path, MAX_PATH))
                     name = std::string("? ") + (strrchr(path, 92) ? strrchr(path, 92) + 1 : path);
+                // Our own code without symbols (dbghelp on the machine can't read the pdb): its address in
+                // the image, written to out/profile_rva.txt for tools to name against the pdb elsewhere.
+                if (name != "?" && module == GetModuleHandleA(nullptr) && name.rfind("? ", 0) == 0)
+                {
+                    const DWORD64 base = reinterpret_cast<DWORD64>(module);
+                    auto rva = [&](DWORD64 a) { return a > base && a - base < 0x10000000 ? uint32_t(a - base) : 0u; };
+                    rvas[{ rva(c.Rip), rva(up[0]), rva(up[1]) }]++;
+                }
             }
             for (DWORD64 addr : up)
             {
@@ -639,6 +649,20 @@ void StartThreadProfiler()
                 Log("profile: thread %u, %llu samples", target, (unsigned long long)samples);
                 for (size_t i = 0; i < top.size() && i < 25; i++)
                     Log("profile: %5.1f%% %s", top[i].first * 100.0 / samples, top[i].second.c_str());
+                if (!rvas.empty())
+                {
+                    if (FILE* out = fopen("out/profile_rva.txt", "a"))
+                    {
+                        fprintf(out, "# %llu samples\n", (unsigned long long)samples); // each 5 s apart
+                        for (auto& [rva, k] : rvas)
+                            if (rva[1])
+                                fprintf(out, "%08X %llu %08X %08X\n", rva[0], (unsigned long long)k, rva[1], rva[2]);
+                            else
+                                fprintf(out, "%08X %llu\n", rva[0], (unsigned long long)k);
+                        fclose(out);
+                    }
+                    rvas.clear();
+                }
                 counts.clear();
                 samples = 0;
             }

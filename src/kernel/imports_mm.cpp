@@ -1,4 +1,6 @@
 // Memory management and module (XEX) queries.
+#include <algorithm>
+
 #include "kernel/imports.h"
 #include "live_switch.h"
 #include "loader.h"
@@ -11,6 +13,15 @@ constexpr uint32_t MEM_DECOMMIT_ = 0x4000;
 constexpr uint32_t MEM_RELEASE_ = 0x8000;
 constexpr uint32_t MEM_LARGE_PAGES_ = 0x20000000;
 constexpr uint32_t PAGE_READWRITE_ = 0x04;
+
+// PGR4_TRACE_VIRT=lo-hi (hex): logs virtual allocations and frees overlapping that range, with the
+// guest caller (finding who reuses a block another thread still uses).
+bool TraceVirt(uint32_t address, uint32_t size)
+{
+    static uint32_t lo = 0, hi = 0;
+    static const bool on = [] { const char* e = getenv("PGR4_TRACE_VIRT"); return e && sscanf(e, "%x-%x", &lo, &hi) == 2; }();
+    return on && address < hi && address + size > lo;
+}
 }
 
 GUEST_EXPORT(NtAllocateVirtualMemory)
@@ -37,6 +48,8 @@ GUEST_EXPORT(NtAllocateVirtualMemory)
         LOG_ONCE("NtAllocateVirtualMemory at a fixed address (%08X) is not supported; allocating elsewhere", requested);
 
     const uint32_t address = GuestAlloc(Heap::Virtual, size, 0x10000);
+    if (TraceVirt(address, size))
+        Log("virt: NtAllocateVirtualMemory %08X size %X lr %08X", address, size, uint32_t(ctx.lr));
     if (!address)
     {
         Return(ctx, X_STATUS_NO_MEMORY);
@@ -51,6 +64,8 @@ GUEST_EXPORT(NtFreeVirtualMemory)
 {
     // (baseAddress*, regionSize*, freeType, debugMemory)
     const uint32_t address = LoadBE32(ctx.r3.u32);
+    if ((ctx.r5.u32 & MEM_RELEASE_) && TraceVirt(address, std::max(GuestAllocationSize(address), 1u)))
+        Log("virt: NtFreeVirtualMemory %08X type %X lr %08X", address, ctx.r5.u32, uint32_t(ctx.lr));
     if (ctx.r5.u32 & MEM_RELEASE_)
     {
         Return(ctx, GuestFree(address) ? X_STATUS_SUCCESS : X_STATUS_INVALID_PARAMETER);

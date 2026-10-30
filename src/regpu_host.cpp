@@ -25,6 +25,10 @@ void GpuStart()
     c.enhance = s.enhance;
     c.msaa = s.msaa;
     c.lowPerformance = s.lowPerformance;
+    // On an old CPU the game waits on the GPU, which waited for the whole frame to be recorded: submitting
+    // every 512 draws lets it start early (FX-8350 + GTX 970 race: 19.7 -> 24.0 fps). Untested on fast PCs.
+    if (s.lowPerformance && !getenv("REGPU_SUBMIT_DRAWS"))
+        _putenv("REGPU_SUBMIT_DRAWS=512");
     c.upscaler = regpu::Config::Upscaler(uint32_t(s.upscaler));
     c.quality = s.quality;
     c.sharpness = s.sharpness;
