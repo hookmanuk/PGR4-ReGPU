@@ -577,10 +577,11 @@ uint32_t XmpMessage(uint32_t message, uint32_t args, uint32_t length)
             g_state = kPaused;
         return kOk;
     case 0x00070004: // XMPStop (client, no wait)
+        // (No state notification: the title asked for it, and a listener reacting while the title
+        // tears down its playlists may be what hung a race load once: a cyclic free list.)
         g_state = kIdle;
         g_ring.clear();
         g_generation++;
-        NotifyState();
         return kOk;
     case 0x00070006: // XMPNext
     case 0x00070007: // XMPPrevious
