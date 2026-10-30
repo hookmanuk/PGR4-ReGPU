@@ -122,9 +122,18 @@ std::string Wide(uint32_t address)
 }
 
 // XN_XMP_STATECHANGED with the player's state: the game then asks for the song (XMPGetCurrentSong).
+// Sent from the decoder thread once the song is open, as Xenia's player does, never from inside the
+// title's own request: sent there, the title's listener ran while it was still starting the playlist
+// and a race load could hang in its allocator (a free list that loops). NotifyState only marks it due.
+std::atomic<bool> g_notifyDue{ false };
 void NotifyState()
 {
-    BroadcastNotification(0x0A000001, g_state);
+    g_notifyDue = true;
+}
+void SendDueNotification()
+{
+    if (g_notifyDue.exchange(false))
+        BroadcastNotification(0x0A000001, g_state);
 }
 
 // The song order for the playlist: as given, or shuffled (the current song first).
@@ -255,6 +264,8 @@ void DecoderMain()
             }
             if (Trace())
                 Log("xmp: playing %s -> %s (%s)", path.c_str(), host.string().c_str(), ok ? "opened" : "FAILED to open");
+            if (ok)
+                SendDueNotification();
             if (!ok)
             {
                 close();
@@ -287,7 +298,7 @@ void DecoderMain()
                 else
                 {
                     g_state = kIdle;
-                    NotifyState();
+                    BroadcastNotification(0x0A000001, g_state); // (the decoder's thread already)
                     if (Trace())
                         Log("xmp: playlist finished");
                 }
