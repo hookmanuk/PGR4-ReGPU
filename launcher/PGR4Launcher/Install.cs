@@ -52,15 +52,33 @@ public sealed class GameSettings
     public bool SkipIntro { get; set; }
     public bool LowPerformance { get; set; }
     public int Language { get; set; } = 1;
+    public int Anisotropy { get; set; } = -1; // -1 the game's own filtering
+    public bool HideShaderOverlay { get; set; }
+    // FSR 1 (upscaler=fsr1): the scene's share of the resolution per axis, one of the game's presets
+    // (Options.RenderScale; 100 = native), and its sharpening 0-100 (sharpness 0-1). Off at 100 and 0.
+    public int RenderScale { get; set; } = 100;
+    public int Sharpening { get; set; }
 
-    static readonly string[] Known = ["profile", "resolution", "aspect", "fullscreen", "vsync", "max_fps", "msaa", "enhance", "skip_intro", "low_performance", "language"];
+    static readonly string[] Known = ["profile", "resolution", "aspect", "fullscreen", "vsync", "max_fps", "msaa", "enhance", "skip_intro", "low_performance", "language", "anisotropy", "hide_shader_overlay", "upscaler", "upscale_quality", "sharpness"];
+    // upscale_quality's presets (src/settings.cpp SceneScale): native, 1.5x, 1.7x, 2x and 3x per axis.
+    static readonly int[] QualityScale = [100, 67, 59, 50, 33];
 
     public static GameSettings Load()
     {
         var s = new GameSettings();
+        string upscaler = "off";
+        int quality = 1;
+        double sharpness = 0.5;
         foreach (var (k, v) in Read())
             switch (k)
             {
+                case "anisotropy": s.Anisotropy = int.TryParse(v, out var an) ? an : -1; break;
+                case "hide_shader_overlay": s.HideShaderOverlay = v == "1"; break;
+                case "upscaler": upscaler = v; break;
+                case "upscale_quality": quality = int.TryParse(v, out var q) ? Math.Clamp(q, 0, 4) : 1; break;
+                case "sharpness":
+                    sharpness = double.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var sh) ? sh : 0.5;
+                    break;
                 case "profile": s.Profile = v; break;
                 case "resolution": s.Resolution = v; break;
                 case "aspect": s.Aspect = v; break;
@@ -73,6 +91,12 @@ public sealed class GameSettings
                 case "low_performance": s.LowPerformance = v == "1"; break;
                 case "language": s.Language = int.TryParse(v, out var l) && l > 0 ? l : 1; break;
             }
+        // FSR 3 and DLSS aren't in this build: anything but fsr1 is off.
+        if (upscaler == "fsr1")
+        {
+            s.RenderScale = QualityScale[quality];
+            s.Sharpening = (int)Math.Round(Math.Clamp(sharpness, 0, 1) * 100);
+        }
         return s;
     }
 
@@ -84,6 +108,12 @@ public sealed class GameSettings
         sb.Append($"profile={(profile.Length > 0 ? profile : "Player")}\n");
         sb.Append($"resolution={Resolution}\naspect={Aspect}\nfullscreen={B(Fullscreen)}\nvsync={B(Vsync)}\n");
         sb.Append($"max_fps={Math.Clamp(MaxFps, 30, 360)}\nmsaa={Msaa}\nenhance={B(Enhance)}\nskip_intro={B(SkipIntro)}\nlow_performance={B(LowPerformance)}\nlanguage={Language}\n");
+        sb.Append($"anisotropy={(Anisotropy < 0 ? -1 : Math.Clamp(Anisotropy, 0, 16))}\nhide_shader_overlay={B(HideShaderOverlay)}\n");
+        // The nearest preset to the render scale; FSR 1 on below 100% or with sharpening.
+        var quality = Array.IndexOf(QualityScale, QualityScale.MinBy(p => Math.Abs(p - Math.Clamp(RenderScale, 33, 100))));
+        var sharp = Math.Clamp(Sharpening, 0, 100);
+        var upscaler = quality > 0 || sharp > 0 ? "fsr1" : "off";
+        sb.Append($"upscaler={upscaler}\nupscale_quality={quality}\nsharpness={(sharp / 100.0).ToString(System.Globalization.CultureInfo.InvariantCulture)}\n");
         foreach (var (k, v) in keep) sb.Append($"{k}={v}\n");
         Directory.CreateDirectory(Paths.User);
         File.WriteAllText(Paths.SettingsFile, sb.ToString());
@@ -131,6 +161,9 @@ public static class Options
     public static readonly int[] Fps = [30, 60, 120, 144, 165, 240, 360];
     public static readonly (string Value, string Name)[] Aspects = [("auto", "Auto (match resolution)"), ("16:9", "16:9"), ("21:9", "21:9 (experimental)"), ("32:9", "32:9 (experimental)")];
     public static readonly (int Value, string Name)[] Msaa = [(1, "Off"), (2, "2x MSAA"), (4, "4x MSAA"), (8, "8x MSAA")];
+    public static readonly (int Value, string Name)[] RenderScale = [(100, "100% (native)"), (67, "67% (Quality)"), (59, "59% (Balanced)"), (50, "50% (Performance)"), (33, "33% (Ultra performance)")];
+    public static readonly (int Value, string Name)[] Sharpening = [(0, "Off"), (25, "Low"), (50, "Medium"), (75, "High"), (100, "Maximum")];
+    public static readonly (int Value, string Name)[] Anisotropy = [(-1, "Game default"), (0, "Off (trilinear)"), (2, "2x"), (4, "4x"), (8, "8x"), (16, "16x")];
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     struct DEVMODE

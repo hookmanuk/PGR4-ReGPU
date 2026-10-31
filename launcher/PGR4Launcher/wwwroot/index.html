@@ -16,6 +16,7 @@
     </div>
     <nav class="tabs" id="tabs">
       <button data-tab="play" class="on">Play</button>
+      <button data-tab="graphics">Graphics</button>
       <button data-tab="profiles">Profiles</button>
       <button data-tab="photos">Photos</button>
       <button data-tab="settings">Settings</button>
@@ -26,7 +27,37 @@
   </header>
 
   <!-- PLAY -->
-  <main class="page grid3" id="page-play">
+  <main class="page grid2" id="page-play">
+    <section class="panel">
+      <div class="panel-head"><h2>Game</h2></div>
+      <div class="toggle-row" data-tip="Skips the legal screen and the splash videos and goes straight to the title screen.">
+        <div><div class="toggle-title">Skip intro videos</div><div class="toggle-sub">Straight to "Press START"</div></div>
+        <button class="switch" id="skipIntro" role="switch"></button>
+      </div>
+      <div class="toggle-row" data-tip="An extra local-contrast pass on the final picture. Experimental: it can look too strong on some tracks.">
+        <div><div class="toggle-title">Enhanced lighting <span class="badge">beta</span></div><div class="toggle-sub">Extra contrast on the final frame</div></div>
+        <button class="switch" id="enhance" role="switch"></button>
+      </div>
+      <label class="field" data-tip="The language of the game's menus and text, from the string tables on your disc.">
+        <span>Language</span>
+        <select id="language"></select>
+      </label>
+      <div class="hint" id="lang-note"></div>
+    </section>
+
+    <section class="panel launch-panel">
+      <div class="panel-head"><h2>Ready</h2></div>
+      <div class="summary" id="summary"></div>
+      <div class="checklist" id="checklist"></div>
+      <div class="launch-box">
+        <button class="launch" id="launch" data-tip="Saves these settings and starts the game.">Play</button>
+        <div class="status" id="status"></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- GRAPHICS -->
+  <main class="page grid3" id="page-graphics" hidden>
     <section class="panel">
       <div class="panel-head"><h2>Display</h2></div>
       <label class="field" data-tip="The size the game renders at. Your display's own modes from 1280x720 up.">
@@ -47,47 +78,54 @@
     </section>
 
     <section class="panel">
-      <div class="panel-head"><h2>Graphics &amp; game</h2></div>
+      <div class="panel-head"><h2>Anti-aliasing &amp; image</h2></div>
+      <label class="field" data-tip="Multisample anti-aliasing: smooths the edges of objects as they are drawn. Each step costs GPU time: 4x is a good balance on most cards. It doesn't smooth fences, trees or crowds.">
+        <span>MSAA</span>
+        <select id="msaa"></select>
+      </label>
+      <label class="field" data-tip="Keeps road and ground textures sharp when seen at a low angle, ahead of the car. Costs a little GPU time. Game default keeps each texture's own setting.">
+        <span>Anisotropic filtering</span>
+        <select id="anisotropy"></select>
+      </label>
+      <label class="field" data-tip="Renders the 3D scene at fewer pixels and upscales it with AMD FSR 1; the HUD and menus stay at full resolution. Lower is faster on weak graphics cards (laptops, older GPUs); most PCs are limited by the CPU and gain little. 100% renders at full resolution.">
+        <span>Render scale (FSR 1)</span>
+        <select id="renderScale"></select>
+      </label>
+      <label class="field" data-tip="AMD CAS-style sharpening (FSR 1's RCAS) on the upscaled scene. Works at any render scale; at 100% it only sharpens. Almost free.">
+        <span>Sharpening</span>
+        <select id="sharpening"></select>
+      </label>
+    </section>
+
+    <div class="stack">
+    <section class="panel">
+      <div class="panel-head"><h2>Performance</h2></div>
       <label class="field" data-tip="The frame-rate cap. The game's physics run at this rate too, so very high caps need a fast CPU. With VSync on, the display's refresh rate also limits it.">
         <span>Max FPS</span>
         <select id="maxFps"></select>
+      </label>
+      <label class="field" id="customFpsField" data-tip="Any cap from 30 to 360 fps." hidden>
+        <span>Custom FPS cap</span>
+        <input id="customFps" type="number" min="30" max="360" step="1">
       </label>
       <div class="toggle-row" data-tip="Waits for the display's refresh: no tearing, slightly more input lag.">
         <div><div class="toggle-title">VSync</div><div class="toggle-sub">Sync frames to the display</div></div>
         <button class="switch" id="vsync" role="switch"></button>
       </div>
-      <label class="field" data-tip="Smooths jagged edges. Each step costs GPU time: 4x is a good balance on most cards.">
-        <span>Anti-aliasing</span>
-        <select id="msaa"></select>
-      </label>
-      <div class="toggle-row" data-tip="An extra local-contrast pass on the final picture. Experimental: it can look too strong on some tracks.">
-        <div><div class="toggle-title">Enhanced lighting <span class="badge">beta</span></div><div class="toggle-sub">Extra contrast on the final frame</div></div>
-        <button class="switch" id="enhance" role="switch"></button>
-      </div>
-      <div class="toggle-row" data-tip="Skips the legal screen and the splash videos and goes straight to the title screen.">
-        <div><div class="toggle-title">Skip intro videos</div><div class="toggle-sub">Straight to "Press START"</div></div>
-        <button class="switch" id="skipIntro" role="switch"></button>
-      </div>
       <div class="toggle-row" data-tip="For older CPUs (for example AMD FX or early Intel Core). Turns off renderer optimisations that speed up modern PCs but slow down old ones. Leave it off on a recent PC.">
         <div><div class="toggle-title">Low performance mode</div><div class="toggle-sub">For older CPUs</div></div>
         <button class="switch" id="lowPerformance" role="switch"></button>
       </div>
-      <label class="field" data-tip="The language of the game's menus and text, from the string tables on your disc.">
-        <span>Language</span>
-        <select id="language"></select>
-      </label>
-      <div class="hint" id="lang-note"></div>
     </section>
 
-    <section class="panel launch-panel">
-      <div class="panel-head"><h2>Ready</h2></div>
-      <div class="summary" id="summary"></div>
-      <div class="checklist" id="checklist"></div>
-      <div class="launch-box">
-        <button class="launch" id="launch" data-tip="Saves these settings and starts the game.">Play</button>
-        <div class="status" id="status"></div>
+    <section class="panel">
+      <div class="panel-head"><h2>Debug</h2></div>
+      <div class="toggle-row" data-tip="The box in the top left that shows shaders being compiled. Turning it off doesn't stop the compiling, only hides it. The first-start screen still shows.">
+        <div><div class="toggle-title">Hide shader compile pop-up</div><div class="toggle-sub">The box in the top left of the screen</div></div>
+        <button class="switch" id="hideShaderOverlay" role="switch"></button>
       </div>
     </section>
+    </div>
   </main>
 
   <!-- PROFILES -->

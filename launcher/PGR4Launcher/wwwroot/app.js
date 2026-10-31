@@ -4,6 +4,7 @@
 const $ = (id) => document.getElementById(id)
 let state = null
 let update = null
+let customFps = false // "Custom…" picked in the Max FPS list
 let nextId = 1
 const pending = new Map()
 
@@ -128,7 +129,7 @@ $("tabs").onclick = (e) => {
   const b = e.target.closest("button")
   if (!b) return
   for (const t of $("tabs").children) t.classList.toggle("on", t === b)
-  for (const p of ["play", "profiles", "photos", "settings", "report", "updates"]) $("page-" + p).hidden = p !== b.dataset.tab
+  for (const p of ["play", "graphics", "profiles", "photos", "settings", "report", "updates"]) $("page-" + p).hidden = p !== b.dataset.tab
   if (b.dataset.tab === "photos") loadPhotos()
   else if (b.dataset.tab === "profiles") loadProfiles()
   else if (b.dataset.tab === "report") loadReport()
@@ -161,16 +162,22 @@ function render() {
   if (s.system && !s.system.zeroCopy) chip("warn", "Reduced performance", zeroCopyTip)
   chip(s.checks.running ? "warn" : "ok", s.checks.running ? "Game running" : "Not running")
 
-  // play page
+  // play and graphics pages
   fill($("resolution"), o.resolutions.map((r) => ({ value: r, name: r.replace("x", " × ") })), set.resolution)
   fill($("aspect"), o.aspects, set.aspect)
-  fill($("maxFps"), o.fps.map((f) => ({ value: f, name: f + " fps" })), set.maxFps)
+  const custom = customFps || !o.fps.includes(set.maxFps)
+  fill($("maxFps"), [...o.fps.map((f) => ({ value: f, name: f + " fps" })), { value: "custom", name: "Custom…" }], custom ? "custom" : set.maxFps)
+  $("customFpsField").hidden = !custom
+  if (document.activeElement !== $("customFps")) $("customFps").value = set.maxFps
   fill($("msaa"), o.msaa, set.msaa)
+  fill($("anisotropy"), o.anisotropy, set.anisotropy)
+  fill($("renderScale"), o.renderScale, set.renderScale)
+  fill($("sharpening"), o.sharpening, set.sharpening)
   fill($("language"), o.languages.map((l) => ({ value: l.id, name: l.name })), set.language)
   $("lang-note").textContent = o.missingLanguages.length
     ? `Your disc also has ${o.missingLanguages.join(", ")} text. Those can't be picked yet.` : ""
   for (const b of $("display").children) b.classList.toggle("on", (b.dataset.full === "1") === set.fullscreen)
-  for (const k of ["vsync", "enhance", "skipIntro", "lowPerformance"]) $(k).classList.toggle("on", !!set[k])
+  for (const k of ["vsync", "enhance", "skipIntro", "lowPerformance", "hideShaderOverlay"]) $(k).classList.toggle("on", !!set[k])
 
   const lang = o.languages.find((l) => l.id === set.language)
   const aspect = o.aspects.find((a) => a.value === set.aspect)
@@ -180,6 +187,8 @@ function render() {
   line("Display", `${set.resolution.replace("x", " × ")}, ${set.fullscreen ? "fullscreen" : "windowed"}${aspect && set.aspect !== "auto" ? ", " + aspect.name : ""}`)
   line("Frame rate", `${set.maxFps} fps cap, VSync ${set.vsync ? "on" : "off"}`)
   line("Anti-aliasing", (o.msaa.find((m) => m.value === set.msaa) || { name: "Off" }).name)
+  const scale = o.renderScale.find((r) => r.value === set.renderScale)
+  line("Upscaling", set.renderScale < 100 ? `FSR 1, ${scale ? scale.name : set.renderScale + "%"}` : set.sharpening > 0 ? "Off (FSR 1 sharpening only)" : "Off")
   line("Language", lang ? lang.name : "English")
   line("Intro", set.skipIntro ? "skipped" : "plays")
 
@@ -285,11 +294,22 @@ function change(patch) {
 }
 $("resolution").onchange = (e) => change({ resolution: e.target.value })
 $("aspect").onchange = (e) => change({ aspect: e.target.value })
-$("maxFps").onchange = (e) => change({ maxFps: +e.target.value })
+$("maxFps").onchange = (e) => {
+  customFps = e.target.value === "custom"
+  if (customFps) { render(); $("customFps").focus() } else change({ maxFps: +e.target.value })
+}
+$("customFps").onchange = (e) => {
+  const f = Math.min(360, Math.max(30, Math.round(+e.target.value) || 60))
+  e.target.value = f
+  change({ maxFps: f })
+}
 $("msaa").onchange = (e) => change({ msaa: +e.target.value })
+$("anisotropy").onchange = (e) => change({ anisotropy: +e.target.value })
+$("renderScale").onchange = (e) => change({ renderScale: +e.target.value })
+$("sharpening").onchange = (e) => change({ sharpening: +e.target.value })
 $("language").onchange = (e) => change({ language: +e.target.value })
 $("display").onclick = (e) => { const b = e.target.closest("button"); if (b) change({ fullscreen: b.dataset.full === "1" }) }
-for (const k of ["vsync", "enhance", "skipIntro", "lowPerformance"]) $(k).onclick = () => change({ [k]: !state.settings[k] })
+for (const k of ["vsync", "enhance", "skipIntro", "lowPerformance", "hideShaderOverlay"]) $(k).onclick = () => change({ [k]: !state.settings[k] })
 
 // ---- actions
 
@@ -545,8 +565,7 @@ async function loadReport() {
   $("share-logs").classList.toggle("on", r.shareLogs)
   const log = await call("report.preview")
   // the end matters most (where it went wrong); the whole log is sent
-  $("log-preview").textContent = log ? (log.length > 60000 ? "…
-" + log.slice(-60000) : log) : "No play.log yet: it's written when the game runs."
+  $("log-preview").textContent = log ? (log.length > 60000 ? "…\n" + log.slice(-60000) : log) : "No play.log yet: it's written when the game runs."
   if (log) $("log-preview").scrollTop = $("log-preview").scrollHeight
 }
 $("bug-log").onclick = () => $("bug-log").classList.toggle("on")

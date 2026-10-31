@@ -80,6 +80,10 @@ void Load()
             g_settings.quality = uint32_t(atoi(value.c_str()));
         else if (key == "sharpness")
             g_settings.sharpness = float(atof(value.c_str()));
+        else if (key == "anisotropy")
+            g_settings.anisotropy = atoi(value.c_str());
+        else if (key == "hide_shader_overlay")
+            g_settings.hideShaderOverlay = value == "1";
     }
     // Overrides for testing.
     if (const char* v = getenv("PGR4_PROFILE"))
@@ -118,6 +122,12 @@ void Load()
         g_settings.lowPerformance = atoi(v) != 0;
     if (const char* v = getenv("PGR4_MSAA"))
         g_settings.msaa = uint32_t(atoi(v));
+    if (const char* v = getenv("PGR4_ANISOTROPY"))
+        g_settings.anisotropy = atoi(v);
+    {
+        const int a = g_settings.anisotropy;
+        g_settings.anisotropy = a < 0 ? -1 : a >= 16 ? 16 : a >= 8 ? 8 : a >= 4 ? 4 : a >= 2 ? 2 : 0;
+    }
     g_settings.msaa = g_settings.msaa >= 8 ? 8 : g_settings.msaa >= 4 ? 4 : g_settings.msaa >= 2 ? 2 : 1;
     g_settings.width = std::clamp<uint32_t>(g_settings.width, 640, 15360);
     g_settings.height = std::clamp<uint32_t>(g_settings.height, 360, 8640);
@@ -183,4 +193,6 @@ void SaveSettings()
     out << "upscaler=" << UpscalerName(s.upscaler) << "\n";
     out << "upscale_quality=" << s.quality << "\n";
     out << "sharpness=" << s.sharpness << "\n";
+    out << "anisotropy=" << s.anisotropy << "\n";
+    out << "hide_shader_overlay=" << (s.hideShaderOverlay ? 1 : 0) << "\n";
 }
