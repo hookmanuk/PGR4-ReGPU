@@ -31,6 +31,17 @@ void GpuStart()
     // (256: 44.2, 128: 43.1). Now always, not just in low performance mode; REGPU_SUBMIT_DRAWS=0 turns it off.
     if (!getenv("REGPU_SUBMIT_DRAWS"))
         _putenv("REGPU_SUBMIT_DRAWS=512");
+    // ReGPU's copies of rewritten buffers made for FH1 (its shadow cascades' and skid marks' buffers,
+    // rewritten in place) cost PGR4 16 fps on the FX race grid (45 -> 29.5) and fix nothing here: small
+    // index buffers copied caught the strip-cut strips (drawn as expanded triangles again), full upload
+    // hashes replaced the sampled ones, and a vertex buffer seen changing once stayed copied for good
+    // (back in place after 120 quiet frames, as before). All three are live switches:
+    // `regpuctl switch NAME 0` gives ReGPU's default.
+    // REGPU_LEAN_FETCH (one sample per 2D pixel fetch, through a sampler table) is +1 fps there, the
+    // race grid unchanged; REGPU_DRAW_THREAD is -7 fps on the FX, so it stays off.
+    for (const char* name : { "REGPU_DIRECT_DYNAMIC_INDICES", "REGPU_UPLOAD_SAMPLED", "REGPU_DYNAMIC_EXPIRE", "REGPU_LEAN_FETCH" })
+        if (!getenv(name))
+            _putenv_s(name, "1");
     c.upscaler = regpu::Config::Upscaler(uint32_t(s.upscaler));
     c.quality = s.quality;
     c.sharpness = s.sharpness;
