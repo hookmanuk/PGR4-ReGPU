@@ -37,6 +37,7 @@ internal static class Program
             return 0;
         }
         Updater.CleanUp();
+        _ = Reports.SendLastLogAsync(); // opted in: the last session's play.log
         ApplicationConfiguration.Initialize();
         Application.Run(new MainForm());
         return 0;

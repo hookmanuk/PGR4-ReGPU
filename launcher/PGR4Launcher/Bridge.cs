@@ -147,6 +147,34 @@ public sealed class Bridge(CoreWebView2 web, Form owner)
                     System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
                     return null;
                 }
+            case "report.state":
+                {
+                    var o = Reports.Options.Load();
+                    return new { shareLogs = o.ShareLogs, noticeShown = o.NoticeShown, installId = o.InstallId, hasLog = Reports.LogPreview() is not null };
+                }
+            case "report.shareLogs":
+                {
+                    var o = Reports.Options.Load();
+                    o.ShareLogs = a!.GetValue<bool>();
+                    // From now on: logs written before the opt-in stay on this PC.
+                    o.LastSentLog = DateTime.UtcNow;
+                    o.Save();
+                    return new { shareLogs = o.ShareLogs };
+                }
+            case "report.noticeShown":
+                {
+                    var o = Reports.Options.Load();
+                    o.NoticeShown = true;
+                    o.Save();
+                    return null;
+                }
+            case "report.preview": return Reports.LogPreview() ?? "";
+            case "report.send":
+                return new
+                {
+                    id = await Reports.SendBugAsync(Str(a, "title"), Str(a, "description"), a?["contact"]?.GetValue<string>() ?? "",
+                        a?["withLog"]?.GetValue<bool>() ?? false),
+                };
             case "update.check":
                 _latest = await Updater.LatestAsync();
                 return UpdateInfo();

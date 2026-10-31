@@ -2,6 +2,9 @@
 // as its Host, then the GPU starts.
 #include <regpu/regpu.h>
 
+#include "gpu/boot_screen.h"
+#include "gpu/pipeline_seed.h"
+#include "gpu/static_shaders.h"
 #include "kernel/runtime.h"
 #include "kernel/thread.h"
 #include "memory.h"
@@ -63,5 +66,12 @@ void GpuStart()
     h.logThreadStacks = [](const char* why) { LogAllHostThreadStacks(why); };
     h.currentStack = [](int maxFrames) { return CurrentHostStack(maxFrames); };
     h.slowFrame = [](double ms) { SpikeDump(ms); };
+    // The first boot: every shader in the executable, then the shipped pipeline list, behind PGR4's own screen.
+    h.staticShaders = StaticShaders;
+    h.staticShadersSaved = StaticShadersSaved;
+    h.bootScreen = BootScreenCompose;
+    h.pipelineSeed = [] { return kPipelineSeed; };
+    if (getenv("PGR4_BOOTSCREEN_PREVIEW"))
+        BootScreenPreview();
     regpu::Start();
 }

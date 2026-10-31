@@ -257,6 +257,11 @@ void ForEachZipMember(const std::vector<uint8_t>& zip, const char* filter, const
     }
 }
 
+bool Inflate(const uint8_t* data, size_t size, std::vector<uint8_t>& out)
+{
+    return Inflater(data, size, out).Run();
+}
+
 bool ReadZipMember(const std::filesystem::path& zipPath, const std::string& member, std::vector<uint8_t>& out)
 {
     std::ifstream in(zipPath, std::ios::binary | std::ios::ate);
