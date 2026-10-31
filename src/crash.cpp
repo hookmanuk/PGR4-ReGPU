@@ -156,7 +156,14 @@ LONG WINAPI OnWatchHit(EXCEPTION_POINTERS* info)
 {
     if (info->ExceptionRecord->ExceptionCode != EXCEPTION_SINGLE_STEP || !(info->ContextRecord->Dr6 & 7))
         return EXCEPTION_CONTINUE_SEARCH;
-    static const int watchLimit = getenv("PGR4_WATCHRW") ? 3000 : 40;
+    // PGR4_WATCH_SKIP=n: log from the n-th hit on (past the boot's writes).
+    static const int watchSkip = getenv("PGR4_WATCH_SKIP") ? atoi(getenv("PGR4_WATCH_SKIP")) : 0;
+    static const int watchLimit = (getenv("PGR4_WATCHRW") ? 3000 : 40) + watchSkip;
+    if (g_watchHits < watchSkip && g_watchHits++ >= 0)
+    {
+        info->ContextRecord->Dr6 = 0;
+        return EXCEPTION_CONTINUE_EXECUTION;
+    }
     if (g_watchHits++ < watchLimit)
     {
         CONTEXT context = *info->ContextRecord;
