@@ -2,7 +2,7 @@
 
 Project Gotham Racing 4 (Bizarre Creations, 2007) as a native PC port, built the same way as the
 Forza Motorsport 2 port (`D:\fm2-port`): XenonRecomp for the code, FM2's runtime for the console's
-kernel, and **ReGPU** (`thirdparty/ReGPU`, a submodule of `zer0ducksgiven/ReGPU`: the framework extracted from FM2's renderer) for graphics.
+kernel, and **ReGPU** (`thirdparty/ReGPU`, the framework extracted from FM2's renderer; vendored into this repository, once a submodule of `zer0ducksgiven/ReGPU`) for graphics.
 The second purpose is to prove ReGPU on a game it wasn't built from: every renderer problem found here
 is either a PGR4 quirk (fixed in this port, through ReGPU's hooks) or a ReGPU gap (fixed in ReGPU).
 
