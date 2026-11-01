@@ -526,7 +526,18 @@ uint32_t XmpMessage(uint32_t message, uint32_t args, uint32_t length)
                 StoreBE32(handles + i * 4, s.handle);
             p.songs.push_back(std::move(s));
         }
-        StoreIfNonNull(Arg(args, 8), p.handle);
+        // The playlist handle the title gets is its own storage buffer (arg 1, sized by
+        // XMPGetTitlePlaylistBufferSize), with the player's handle in its first word, as Xenia does:
+        // after XMPDeleteTitlePlaylist the title frees that handle with its allocator. Given our own
+        // number instead (0xB1000001), that free hit a block outside its heap, whose range list then
+        // looped: the profile load froze (sub_8272ED40 -> sub_826A5890).
+        if (const uint32_t storage = Arg(args, 1))
+        {
+            StoreBE32(storage, p.handle);
+            StoreIfNonNull(Arg(args, 8), storage);
+        }
+        else
+            StoreIfNonNull(Arg(args, 8), p.handle);
         if (Trace())
             Log("xmp: playlist %08X '%s': %zu songs, first %s", p.handle, p.name.c_str(), p.songs.size(), p.songs.empty() ? "-" : p.songs[0].path.c_str());
         g_playlists[p.handle] = std::move(p);
