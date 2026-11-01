@@ -218,7 +218,9 @@ public static class Game
         var devUpdate = Path.Combine(Paths.Root, "out", "tu2");
         if (!File.Exists(Path.Combine(Paths.Update, "default.xexp")) && File.Exists(Path.Combine(devUpdate, "default.xexp")))
             psi.Environment["PGR4_TITLE_UPDATE_DIR"] = devUpdate;
-        Process.Start(psi);
+        // The session's log goes up as soon as the game closes (not only at the launcher's next start)
+        var game = Process.Start(psi);
+        if (game is not null) _ = Reports.SendAfterExitAsync(game);
     }
 
     // robocopy /XC /XN /XO in install-content.cmd: what is already there is left alone. A DLC package the game has

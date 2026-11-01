@@ -599,6 +599,8 @@ async function refresh() {
 async function loadReport() {
   const r = await call("report.state")
   $("share-logs").classList.toggle("on", r.shareLogs)
+  $("share-status").textContent = !r.shareLogs ? "" : r.lastError ? "Last try didn't send: " + r.lastError
+    : r.lastSent && !r.lastSent.startsWith("0001") ? "Last log sent " + new Date(r.lastSent).toLocaleString() : ""
   const log = await call("report.preview")
   // the end matters most (where it went wrong); the whole log is sent
   $("log-preview").textContent = log ? (log.length > 60000 ? "…\n" + log.slice(-60000) : log) : "No play.log yet: it's written when the game runs."
@@ -630,12 +632,13 @@ $("bug-send").onclick = () => guarded(async () => {
 async function sharingNotice() {
   const r = await call("report.state")
   if (r.noticeShown) return
-  const stay = (await askBox("Sharing play.log",
+  // Shown is what counts: closing the launcher with the box up mustn't keep sharing off for good
+  const asked = askBox("Sharing play.log",
     "To help find bugs on PCs like yours, the launcher sends each session's play.log to the developers: your hardware, drivers, settings, frame rates and errors, and the list of graphics pipelines the game built (hashes only, so later versions can build them on the first start). Your Windows user name and PC name are removed first. " +
     "This is on by default. To opt out, open the Report tab and switch off \"Share play.log after each session\".",
-    "Got it", { no: "Open Report tab" })) !== null
+    "Got it", { no: "Open Report tab" })
   await call("report.noticeShown")
-  if (!stay) document.querySelector("[data-tab=report]").click()
+  if ((await asked) === null) document.querySelector("[data-tab=report]").click()
 }
 
 refresh().then(() => guarded(sharingNotice)).then(() => checkUpdates(true))

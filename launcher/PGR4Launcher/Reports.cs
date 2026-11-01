@@ -38,6 +38,8 @@ public static class Reports
         public bool NoticeShown { get; set; }
         public string InstallId { get; set; } = "";
         public DateTime LastSentLog { get; set; }
+        // The last time a log wasn't sent, and why (shown on the Report tab)
+        public string LastSendError { get; set; } = "";
 
         static string File => Path.Combine(Paths.User, "reporting.json");
 
@@ -149,12 +151,15 @@ public static class Reports
     /// </summary>
     public static async Task SendLastLogAsync()
     {
+        await SendLock.WaitAsync();
+        Options? o = null;
         try
         {
-            var o = Options.Load();
-            if (!o.ShareLogs || !o.NoticeShown || Game.Running || !System.IO.File.Exists(LogFile)) return;
+            o = Options.Load();
+            if (!o.ShareLogs || !o.NoticeShown || !System.IO.File.Exists(LogFile)) return;
             var written = System.IO.File.GetLastWriteTimeUtc(LogFile);
             if (written <= o.LastSentLog) return;
+            if (Game.Running) return; // still being written: sent when the game closes
             var log = LogPreview();
             if (log is null) return;
             await SendAsync(new
@@ -167,7 +172,35 @@ public static class Reports
                 pipelines = Pipelines(),
             });
             o.LastSentLog = written;
+            o.LastSendError = "";
             o.Save();
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                if (o is not null)
+                {
+                    o.LastSendError = $"{DateTime.Now:g}: {ex.Message}";
+                    o.Save();
+                }
+            }
+            catch { }
+        }
+        finally { SendLock.Release(); }
+    }
+
+    static readonly SemaphoreSlim SendLock = new(1, 1);
+
+    /// <summary>Waits for the game started by Game.Launch to close, then sends its log.</summary>
+    public static async Task SendAfterExitAsync(System.Diagnostics.Process game)
+    {
+        try
+        {
+            await game.WaitForExitAsync();
+            // cmd.exe has gone; wait out a pgr4.exe still closing
+            for (int i = 0; i < 30 && Game.Running; i++) await Task.Delay(1000);
+            await SendLastLogAsync();
         }
         catch { }
     }

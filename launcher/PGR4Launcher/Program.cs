@@ -22,7 +22,15 @@ internal static class Program
         // --play: start the game with the saved settings, without the window (shortcuts, tests)
         if (args.Contains("--play"))
         {
-            try { Game.Launch(); return 0; }
+            try
+            {
+                Game.Launch();
+                // no window to keep the launcher alive: wait for the game here so its log is sent when it closes
+                for (int i = 0; i < 60 && !Game.Running; i++) Thread.Sleep(500);
+                while (Game.Running) Thread.Sleep(2000);
+                Reports.SendLastLogAsync().Wait();
+                return 0;
+            }
             catch (Exception ex) { Platform.Error("Project Gotham Racing 4 ReGPU", ex.Message); return 1; }
         }
         // one window: starting the launcher again brings the open one forward

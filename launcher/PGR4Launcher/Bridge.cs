@@ -177,7 +177,8 @@ public sealed class Bridge
             case "report.state":
                 {
                     var o = Reports.Options.Load();
-                    return new { shareLogs = o.ShareLogs, noticeShown = o.NoticeShown, installId = o.InstallId, hasLog = Reports.LogPreview() is not null };
+                    return new { shareLogs = o.ShareLogs, noticeShown = o.NoticeShown, installId = o.InstallId, hasLog = Reports.LogPreview() is not null,
+                                 lastSent = o.LastSentLog, lastError = o.LastSendError };
                 }
             case "report.shareLogs":
                 {
