@@ -10,7 +10,7 @@ emulator: nothing interprets the console's code or runs it in a virtual machine.
   game's GPU commands into Direct3D 12 draws, and its shaders (Xenos microcode) into HLSL compiled for
   your GPU. Pipelines are cached, so a shader compiles once.
 
-This repository is private for now. No game files are included: you need your own copy of the disc
+ No game files are included: you need your own copy of the disc
 (and, optionally, Title Update #2 and DLC).
 
 ## ReGPU
