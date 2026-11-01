@@ -2,10 +2,9 @@ namespace PGR4Launcher;
 
 /// <summary>Photo Mode pictures: Documents\pgr4\profiles\&lt;profile&gt;\content\&lt;user&gt;\&lt;stamp&gt;.p\photo (a JPEG
 /// without an extension; the package's name, "Photo: date @ time", is in &lt;stamp&gt;.p.title, UTF-16). The page shows
-/// them through the photos.pgr4 virtual host.</summary>
+/// them from photos/ on the launcher's host (Window.cs).</summary>
 internal static class Photos
 {
-    public const string Host = "photos.pgr4";
     public static readonly string Root = Path.Combine(Paths.User, "profiles");
 
     public record Photo(string Id, string Name, string Profile, long Bytes, DateTime Taken, string Url);
@@ -18,7 +17,7 @@ internal static class Photos
         {
             var rel = Path.GetRelativePath(Root, f.FullName);
             var profile = rel.Split(Path.DirectorySeparatorChar)[0];
-            var url = $"https://{Host}/" + string.Join('/', rel.Split(Path.DirectorySeparatorChar).Select(Uri.EscapeDataString)) + $"?v={f.LastWriteTimeUtc.Ticks}";
+            var url = Web.PhotoUrl(rel, f.LastWriteTimeUtc);
             list.Add(new Photo(rel, TitleOf(f), profile, f.Length, f.LastWriteTime, url));
         }
         return list.OrderByDescending(p => p.Taken).ToList();
@@ -47,38 +46,17 @@ internal static class Photos
         return full;
     }
 
-    public static void Copy(string id)
-    {
-        using var image = Image.FromStream(new MemoryStream(File.ReadAllBytes(PathOf(id))));
-        Clipboard.SetImage(image);
-    }
-
-    public static bool SaveAs(string id, IWin32Window owner)
+    /// <summary>A photo saved where the player chose: the JPEG as it is, or the PNG the page converted it to.</summary>
+    public static void Write(string id, string file, byte[]? png)
     {
         var source = PathOf(id);
-        using var dialog = new SaveFileDialog
-        {
-            Title = "Save photo",
-            FileName = Path.GetFileNameWithoutExtension(Path.GetDirectoryName(source)) + ".jpg",
-            Filter = "JPEG image|*.jpg|PNG image|*.png",
-            InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),
-        };
-        if (dialog.ShowDialog(owner) != DialogResult.OK) return false;
-        if (dialog.FilterIndex == 2)
-        {
-            using var image = Image.FromStream(new MemoryStream(File.ReadAllBytes(source)));
-            image.Save(dialog.FileName, System.Drawing.Imaging.ImageFormat.Png);
-        }
-        else
-            File.Copy(source, dialog.FileName, true);
-        return true;
+        if (png is not null) File.WriteAllBytes(file, png);
+        else File.Copy(source, file, true);
     }
 
     public static void Reveal(string? id)
     {
-        if (id is not null)
-            System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{PathOf(id)}\"");
-        else
-            System.Diagnostics.Process.Start("explorer.exe", $"\"{Directory.CreateDirectory(Root).FullName}\"");
+        if (id is not null) Platform.Reveal(PathOf(id));
+        else Platform.OpenFolder(Directory.CreateDirectory(Root).FullName);
     }
 }

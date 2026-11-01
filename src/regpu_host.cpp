@@ -2,6 +2,12 @@
 // as its Host, then the GPU starts.
 #include <regpu/regpu.h>
 
+#include <windows.h>
+
+#include <atomic>
+#include <string>
+#include <thread>
+
 #include "gpu/boot_screen.h"
 #include "gpu/pipeline_seed.h"
 #include "gpu/static_shaders.h"
@@ -13,6 +19,51 @@
 void LogAllHostThreadStacks(const char* why); // hang.cpp
 std::string CurrentHostStack(int maxFrames);  // crash.cpp
 void SpikeDump(double ms);                    // kernel/thread.cpp
+
+namespace
+{
+// The window title: "Project Gotham Racing 4 - ReGPU - <fps> FPS" (as Forza Horizon ReImagined shows it), updated once a
+// second. The renderer only counts frames (onSwap); a thread of its own sets the title, so a window message never
+// holds up a frame.
+constexpr const wchar_t* kTitle = L"Project Gotham Racing 4 - ReGPU";
+std::atomic<uint64_t> g_swaps{ 0 };
+
+BOOL CALLBACK FindOurWindow(HWND w, LPARAM out)
+{
+    DWORD pid = 0;
+    GetWindowThreadProcessId(w, &pid);
+    wchar_t cls[16] = {};
+    if (pid == GetCurrentProcessId() && GetClassNameW(w, cls, 16) && wcscmp(cls, L"regpu") == 0 && !GetParent(w))
+    {
+        *reinterpret_cast<HWND*>(out) = w;
+        return FALSE;
+    }
+    return TRUE;
+}
+
+void TitleLoop()
+{
+    SetThreadDescription(GetCurrentThread(), L"window title");
+    HWND window = nullptr;
+    uint64_t last = g_swaps.load();
+    for (;;)
+    {
+        Sleep(1000);
+        const uint64_t now = g_swaps.load();
+        const uint64_t fps = now - last;
+        last = now;
+        if (!window || !IsWindow(window))
+        {
+            window = nullptr;
+            EnumWindows(FindOurWindow, LPARAM(&window));
+            if (!window)
+                continue;
+        }
+        const std::wstring title = std::wstring(kTitle) + L" - " + std::to_wstring(fps) + L" FPS";
+        SetWindowTextW(window, title.c_str());
+    }
+}
+}
 
 void GpuStart()
 {
@@ -52,7 +103,7 @@ void GpuStart()
     c.quality = s.quality;
     c.sharpness = s.sharpness;
     c.userDir = UserDir();
-    c.windowTitle = L"Project Gotham Racing 4";
+    c.windowTitle = kTitle;
     // About 5,000 draws a frame in menus: 64 MB overflowed and dropped the scene's full-screen copy.
     c.uploadRingMB = 256;
 
@@ -69,6 +120,10 @@ void GpuStart()
     h.logThreadStacks = [](const char* why) { LogAllHostThreadStacks(why); };
     h.currentStack = [](int maxFrames) { return CurrentHostStack(maxFrames); };
     h.slowFrame = [](double ms) { SpikeDump(ms); };
+    h.onSwap = [](uint64_t) {
+        g_swaps.fetch_add(1, std::memory_order_relaxed);
+    };
+    std::thread(TitleLoop).detach();
     // The first boot: every shader in the executable, then the shipped pipeline list, behind PGR4's own screen.
     h.staticShaders = StaticShaders;
     h.staticShadersSaved = StaticShadersSaved;

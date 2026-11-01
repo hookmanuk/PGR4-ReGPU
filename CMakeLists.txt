@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(pgr4 C CXX)
+project(pgr4 C CXX RC)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -53,7 +53,7 @@ add_custom_command(OUTPUT "${CMAKE_BINARY_DIR}/generated/stubs.cpp"
     COMMENT "Generating import stubs")
 
 file(GLOB_RECURSE PGR4_SOURCES CONFIGURE_DEPENDS src/*.cpp)
-add_executable(pgr4 ${PGR4_SOURCES} "${CMAKE_BINARY_DIR}/generated/stubs.cpp")
+add_executable(pgr4 ${PGR4_SOURCES} "${CMAKE_BINARY_DIR}/generated/stubs.cpp" "${CMAKE_SOURCE_DIR}/src/pgr4.rc")
 # The game's headers first, then ReGPU's shared helpers (log.h, live_switch.h, png.h, precise_sleep.h):
 # ReGPU provides them, the port uses the same ones.
 target_include_directories(pgr4 PRIVATE src thirdparty/ReGPU/src)

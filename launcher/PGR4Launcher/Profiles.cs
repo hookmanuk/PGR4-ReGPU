@@ -199,6 +199,51 @@ internal static class Profiles
         return name;
     }
 
+    /// <summary>Imports a save copied off an Xbox 360 (PGR4's save package, from the console's
+    /// Content\&lt;profile&gt;\4D5307F9\00000001 folder), as the FM2 launcher does. The save stays signed for the console
+    /// profile, so the new profile takes that profile's XUID from the package header; it's named after the gamertag
+    /// unless a name is given. The game keeps it as content\00000001\pgr4.save (savegame, buffer.save).</summary>
+    public static string Import360(string package, string? asName)
+    {
+        NotRunning();
+        using var stfs = new Stfs(package);
+        if (stfs.TitleId != 0x4D5307F9 || stfs.ContentType != 1)
+            throw new InvalidDataException("That isn't a Project Gotham Racing 4 save from an Xbox 360.");
+        if (!stfs.Files().Any(e => !e.Directory && e.Path == "savegame"))
+            throw new InvalidDataException("That save package has no savegame in it.");
+        var head = new byte[8];
+        using (var f = File.OpenRead(package)) { f.Position = 0x371; f.ReadExactly(head); }
+        var xuid = Convert.ToHexString(head);
+        if (xuid[0] != 'E') throw new InvalidDataException("The save doesn't say which Xbox profile it belongs to.");
+
+        string name;
+        if (!string.IsNullOrWhiteSpace(asName)) name = NewName(asName);
+        else
+        {
+            var tag = string.IsNullOrWhiteSpace(stfs.DisplayName) ? "Xbox 360" : stfs.DisplayName;
+            tag = new string(tag.Trim().Where(c => !char.IsControl(c) && c != '=').Take(15).ToArray());
+            name = tag;
+            for (int i = 2; Directory.Exists(Path.Combine(Root, FolderName(name))); i++)
+                name = tag[..Math.Min(tag.Length, 12)] + " " + i;
+            name = NewName(name);
+        }
+        var target = Path.Combine(Root, FolderName(name));
+        var save = Path.Combine(target, "content", "00000001", "pgr4.save");
+        Directory.CreateDirectory(save);
+        try
+        {
+            stfs.Extract(save);
+            File.WriteAllText(save + ".title", "PGR4 Save Game", new UnicodeEncoding(false, false));
+            File.WriteAllText(Path.Combine(target, "xuid"), xuid + "\n");
+        }
+        catch
+        {
+            Directory.Delete(target, true);
+            throw;
+        }
+        return name;
+    }
+
     public static void Export(string name, string file)
     {
         var dir = Dir(name);

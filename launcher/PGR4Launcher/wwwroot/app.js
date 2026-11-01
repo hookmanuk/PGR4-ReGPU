@@ -10,7 +10,7 @@ const pending = new Map()
 
 // ---- host calls
 
-const host = window.chrome && window.chrome.webview
+// (host: wwwroot/host.js, the window's message channel)
 if (host) host.addEventListener("message", (e) => {
   const m = e.data
   if (m.event === "progress") return onProgress(m.data)
@@ -157,14 +157,14 @@ function render() {
   chips.replaceChildren()
   const chip = (cls, text, tip) => { const c = el("span", "chip " + cls); c.append(el("span", "dot"), text); if (tip) c.dataset.tip = tip; chips.append(c) }
   chip(s.checks.game ? "ok" : "bad", s.checks.game ? "Game files" : "Game files missing", "The game built from your disc, in the install's game folder.")
-  chip(s.checks.update ? "ok" : "warn", s.checks.update ? "Title update" : "No title update", "The title update (needed for DLC), in Documents\\pgr4\\update.")
+  chip(s.checks.update ? "ok" : "bad", s.checks.update ? "Title update" : "No title update", "The title update the game needs to start, in Documents\\pgr4\\update.")
+  $("tu-add").hidden = s.checks.update
   const zeroCopyTip = "Fast memory sharing between the game and your GPU (Direct3D 12 zero-copy). The game found it could not use it, so it copies data every frame: lower performance and hitches. Updating Windows and your GPU driver usually fixes it (Windows 11 23H2 or newer with a 2024 or newer driver works best)."
   if (s.system && !s.system.zeroCopy) chip("warn", "Reduced performance", zeroCopyTip)
   chip(s.checks.running ? "warn" : "ok", s.checks.running ? "Game running" : "Not running")
 
   // play and graphics pages
   fill($("resolution"), o.resolutions.map((r) => ({ value: r, name: r.replace("x", " × ") })), set.resolution)
-  fill($("aspect"), o.aspects, set.aspect)
   const custom = customFps || !o.fps.includes(set.maxFps)
   fill($("maxFps"), [...o.fps.map((f) => ({ value: f, name: f + " fps" })), { value: "custom", name: "Custom…" }], custom ? "custom" : set.maxFps)
   $("customFpsField").hidden = !custom
@@ -177,14 +177,13 @@ function render() {
   $("lang-note").textContent = o.missingLanguages.length
     ? `Your disc also has ${o.missingLanguages.join(", ")} text. Those can't be picked yet.` : ""
   for (const b of $("display").children) b.classList.toggle("on", (b.dataset.full === "1") === set.fullscreen)
-  for (const k of ["vsync", "enhance", "skipIntro", "lowPerformance", "hideShaderOverlay"]) $(k).classList.toggle("on", !!set[k])
+  for (const k of ["vsync", "skipIntro", "lowPerformance", "hideShaderOverlay"]) $(k).classList.toggle("on", !!set[k])
 
   const lang = o.languages.find((l) => l.id === set.language)
-  const aspect = o.aspects.find((a) => a.value === set.aspect)
   $("summary").innerHTML = ""
   const line = (label, value) => { const d = el("div"); d.append(label + ": "); d.append(el("b", "", value)); $("summary").append(d) }
   line("Profile", set.profile || "Player")
-  line("Display", `${set.resolution.replace("x", " × ")}, ${set.fullscreen ? "fullscreen" : "windowed"}${aspect && set.aspect !== "auto" ? ", " + aspect.name : ""}`)
+  line("Display", `${set.resolution.replace("x", " × ")}, ${set.fullscreen ? "fullscreen" : "windowed"}`)
   line("Frame rate", `${set.maxFps} fps cap, VSync ${set.vsync ? "on" : "off"}`)
   line("Anti-aliasing", (o.msaa.find((m) => m.value === set.msaa) || { name: "Off" }).name)
   const scale = o.renderScale.find((r) => r.value === set.renderScale)
@@ -293,7 +292,6 @@ function change(patch) {
   saveTimer = setTimeout(() => guarded(async () => { state = await call("save", state.settings); render() }), 250)
 }
 $("resolution").onchange = (e) => change({ resolution: e.target.value })
-$("aspect").onchange = (e) => change({ aspect: e.target.value })
 $("maxFps").onchange = (e) => {
   customFps = e.target.value === "custom"
   if (customFps) { render(); $("customFps").focus() } else change({ maxFps: +e.target.value })
@@ -309,7 +307,7 @@ $("renderScale").onchange = (e) => change({ renderScale: +e.target.value })
 $("sharpening").onchange = (e) => change({ sharpening: +e.target.value })
 $("language").onchange = (e) => change({ language: +e.target.value })
 $("display").onclick = (e) => { const b = e.target.closest("button"); if (b) change({ fullscreen: b.dataset.full === "1" }) }
-for (const k of ["vsync", "enhance", "skipIntro", "lowPerformance", "hideShaderOverlay"]) $(k).onclick = () => change({ [k]: !state.settings[k] })
+for (const k of ["vsync", "skipIntro", "lowPerformance", "hideShaderOverlay"]) $(k).onclick = () => change({ [k]: !state.settings[k] })
 
 // ---- actions
 
@@ -427,7 +425,7 @@ function renderProfiles() {
   if (p) for (const [k, v] of [["Last played", when(p.lastPlayed)], ["Photos", String(p.photos)], ["Size", size(p.bytes)], ["XUID", p.xuid]])
     info.append(el("div", "k", k), el("div", "v", v))
   for (const id of ["prof-use", "prof-backup", "prof-duplicate", "prof-rename", "prof-export", "prof-merge", "prof-delete"]) $(id).disabled = !p
-  for (const id of ["prof-duplicate", "prof-rename", "prof-merge", "prof-delete", "prof-import"]) if (running) $(id).disabled = true
+  for (const id of ["prof-duplicate", "prof-rename", "prof-merge", "prof-delete", "prof-import", "prof-import360"]) if (running) $(id).disabled = true
   $("prof-use").disabled = !p || p.active
   $("prof-merge").disabled = !p || running || ps.length < 2
   $("prof-status").textContent = running ? "The game is running: close it to change profiles." : ""
@@ -482,6 +480,17 @@ $("prof-import").onclick = () => guarded(async () => {
   if (!r) return
   profiles = r.state; profileSel = r.name; renderProfiles()
   toast(`${r.name} imported.`, true)
+})
+$("prof-import360").onclick = () => guarded(async () => {
+  const r = await call("profiles.import360", {})
+  if (!r) return
+  profiles = r.state; profileSel = r.name; renderProfiles()
+  toast(`${r.name} imported from the Xbox 360 save.`, true)
+})
+$("tu-add").onclick = () => guarded(async () => {
+  state = await call("tu.add")
+  render()
+  if (state.checks.update) toast("Title update installed.", true)
 })
 $("prof-merge").onclick = async () => {
   const others = profiles.profiles.filter((p) => p.name !== profileSel).map((p) => ({ value: p.name, name: `${p.name} (${p.photos} photo${p.photos === 1 ? "" : "s"})` }))
@@ -549,8 +558,35 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "ArrowRight" || e.key === "ArrowDown") { stepPhoto(1); e.preventDefault() }
   if (e.key === "c" && e.ctrlKey && photoId) $("photo-copy").click()
 })
-$("photo-copy").onclick = () => guarded(async () => { await call("photos.copy", photoId); toast("Photo copied to the clipboard.", true) })
-$("photo-save").onclick = () => guarded(async () => { if (await call("photos.save", photoId)) toast("Photo saved.", true) })
+// A photo as a PNG, drawn from its JPEG (served by the launcher under photos/).
+async function pngOf(id) {
+  const p = photos.find((x) => x.id === id)
+  const img = new Image()
+  img.src = p.url
+  await img.decode()
+  const c = document.createElement("canvas")
+  c.width = img.naturalWidth
+  c.height = img.naturalHeight
+  c.getContext("2d").drawImage(img, 0, 0)
+  return new Promise((resolve, reject) => c.toBlob((b) => b ? resolve(b) : reject(new Error("Couldn't convert the photo.")), "image/png"))
+}
+async function base64Of(blob) {
+  const bytes = new Uint8Array(await blob.arrayBuffer())
+  let s = ""
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  return btoa(s)
+}
+$("photo-copy").onclick = () => guarded(async () => {
+  await navigator.clipboard.write([new ClipboardItem({ "image/png": pngOf(photoId) })])
+  toast("Photo copied to the clipboard.", true)
+})
+$("photo-save").onclick = () => guarded(async () => {
+  const file = await call("photos.saveAs", photoId)
+  if (!file) return
+  const png = file.toLowerCase().endsWith(".png") ? await base64Of(await pngOf(photoId)) : null
+  await call("photos.write", { id: photoId, file, png })
+  toast("Photo saved.", true)
+})
 $("photo-reveal").onclick = () => guarded(() => call("photos.reveal", photoId))
 $("photos-folder").onclick = () => guarded(() => call("photos.reveal", null))
 

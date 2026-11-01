@@ -53,7 +53,7 @@ public sealed class GameSettings
     public bool LowPerformance { get; set; }
     public int Language { get; set; } = 1;
     public int Anisotropy { get; set; } = -1; // -1 the game's own filtering
-    public bool HideShaderOverlay { get; set; }
+    public bool HideShaderOverlay { get; set; } = true; // on unless turned off
     // FSR 1 (upscaler=fsr1): the scene's share of the resolution per axis, one of the game's presets
     // (Options.RenderScale; 100 = native), and its sharpening 0-100 (sharpness 0-1). Off at 100 and 0.
     public int RenderScale { get; set; } = 100;
@@ -81,12 +81,12 @@ public sealed class GameSettings
                     break;
                 case "profile": s.Profile = v; break;
                 case "resolution": s.Resolution = v; break;
-                case "aspect": s.Aspect = v; break;
+                case "aspect": s.Aspect = v == "16:9" ? v : "auto"; break; // (ultra-wide comes later)
                 case "fullscreen": s.Fullscreen = v == "1"; break;
                 case "vsync": s.Vsync = v == "1"; break;
                 case "max_fps": s.MaxFps = int.TryParse(v, out var f) ? f : 60; break;
                 case "msaa": s.Msaa = int.TryParse(v, out var m) ? m : 1; break;
-                case "enhance": s.Enhance = v == "1"; break;
+                case "enhance": break; // (enhanced lighting is off for now)
                 case "skip_intro": s.SkipIntro = v == "1"; break;
                 case "low_performance": s.LowPerformance = v == "1"; break;
                 case "language": s.Language = int.TryParse(v, out var l) && l > 0 ? l : 1; break;
@@ -107,7 +107,7 @@ public sealed class GameSettings
         var sb = new StringBuilder("# Project Gotham Racing 4 (pgr4) settings; the launcher edits this file.\n");
         sb.Append($"profile={(profile.Length > 0 ? profile : "Player")}\n");
         sb.Append($"resolution={Resolution}\naspect={Aspect}\nfullscreen={B(Fullscreen)}\nvsync={B(Vsync)}\n");
-        sb.Append($"max_fps={Math.Clamp(MaxFps, 30, 360)}\nmsaa={Msaa}\nenhance={B(Enhance)}\nskip_intro={B(SkipIntro)}\nlow_performance={B(LowPerformance)}\nlanguage={Language}\n");
+        sb.Append($"max_fps={Math.Clamp(MaxFps, 30, 360)}\nmsaa={Msaa}\nenhance=0\nskip_intro={B(SkipIntro)}\nlow_performance={B(LowPerformance)}\nlanguage={Language}\n");
         sb.Append($"anisotropy={(Anisotropy < 0 ? -1 : Math.Clamp(Anisotropy, 0, 16))}\nhide_shader_overlay={B(HideShaderOverlay)}\n");
         // The nearest preset to the render scale; FSR 1 on below 100% or with sharpening.
         var quality = Array.IndexOf(QualityScale, QualityScale.MinBy(p => Math.Abs(p - Math.Clamp(RenderScale, 33, 100))));
@@ -159,7 +159,7 @@ public static class Options
     }
 
     public static readonly int[] Fps = [30, 60, 120, 144, 165, 240, 360];
-    public static readonly (string Value, string Name)[] Aspects = [("auto", "Auto (match resolution)"), ("16:9", "16:9"), ("21:9", "21:9 (experimental)"), ("32:9", "32:9 (experimental)")];
+    public static readonly (string Value, string Name)[] Aspects = [("auto", "Auto (match resolution)"), ("16:9", "16:9")];
     public static readonly (int Value, string Name)[] Msaa = [(1, "Off"), (2, "2x MSAA"), (4, "4x MSAA"), (8, "8x MSAA")];
     public static readonly (int Value, string Name)[] RenderScale = [(100, "100% (native)"), (67, "67% (Quality)"), (59, "59% (Balanced)"), (50, "50% (Performance)"), (33, "33% (Ultra performance)")];
     public static readonly (int Value, string Name)[] Sharpening = [(0, "Off"), (25, "Low"), (50, "Medium"), (75, "High"), (100, "Maximum")];
@@ -334,6 +334,7 @@ public static class Dlc
         {
             try
             {
+                if (KelloggsZip.TryInstall(f, Paths.Dlc)) { added++; continue; }
                 Stfs.Install(f, Paths.Dlc, mods);
                 added++;
             }
@@ -354,5 +355,29 @@ public static class Dlc
                 if (Directory.Exists(p)) Directory.Delete(p, true);
                 else if (File.Exists(p)) File.Delete(p);
             }
+    }
+}
+
+/// <summary>The Kellogg's Typhon DLC as a zip of its installed files (the 360 package is lost; this was rebuilt from
+/// what survives): Add DLC copies it into the dlc folder as it is.</summary>
+public static class KelloggsZip
+{
+    const string Id = "EAB7964FF01A0799094FE8AD59670FF4CFC5CFB44D";
+    static readonly string[] Files = [Id + "/toc.txt", Id + "/testoffer.txt", Id + ".license", Id + ".title"];
+
+    public static bool TryInstall(string file, string dlcDir)
+    {
+        if (!file.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) return false;
+        using var zip = System.IO.Compression.ZipFile.OpenRead(file);
+        var entries = zip.Entries.Where(e => e.Length > 0).ToDictionary(e => e.FullName.Replace("\\", "/"), StringComparer.OrdinalIgnoreCase);
+        if (!entries.ContainsKey(Id + "/toc.txt")) return false;
+        foreach (var name in Files)
+        {
+            if (!entries.TryGetValue(name, out var e)) throw new InvalidDataException("Not the Kellogg's DLC zip: " + name + " is missing.");
+            var dest = Path.Combine(dlcDir, name.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+            System.IO.Compression.ZipFileExtensions.ExtractToFile(e, dest, true);
+        }
+        return true;
     }
 }

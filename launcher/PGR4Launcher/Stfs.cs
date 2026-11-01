@@ -139,6 +139,25 @@ public sealed class Stfs : IDisposable
 
     /// <summary>Installs a package as the game reads DLC: unpacked to dir\name, with name.title and name.license.
     /// Returns the installed folder's name. <paramref name="mod"/> marks it as a mod (name.mod) for the launcher.</summary>
+    // The title update this build was made from (Title Update 2, TU_16L61VP_0000004000000.00000000000G1).
+    const string TitleUpdateSha256 = "9980cf82c3bbbb32b35c841532c832b5598e99ce50daba8c658645213ab3d9b8";
+
+    /// <summary>Unpacks the title update into Documents\pgr4\update, as the installer does (the FM2 launcher's), for
+    /// installs where that step didn't happen: the game won't start without it.</summary>
+    public static void InstallTitleUpdate(string package, string dest)
+    {
+        string hash;
+        using (var f = File.OpenRead(package))
+            hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(f)).ToLowerInvariant();
+        if (hash != TitleUpdateSha256)
+            throw new InvalidDataException($"{Path.GetFileName(package)} isn't the title update this build needs (the file named TU_16L61VP_0000004000000.00000000000G1).");
+        using var s = new Stfs(package);
+        System.IO.Directory.CreateDirectory(dest);
+        s.Extract(dest);
+        if (!File.Exists(Path.Combine(dest, "default.xexp")))
+            throw new InvalidDataException("The title update unpacked without default.xexp.");
+    }
+
     public static string Install(string package, string dir, bool mod)
     {
         using var s = new Stfs(package);

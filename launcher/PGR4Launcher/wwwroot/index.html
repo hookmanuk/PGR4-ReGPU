@@ -10,19 +10,20 @@
     <div class="brand">
       <img src="icon.png" alt="" class="mark">
       <div>
-        <div class="logo">PROJECT GOTHAM RACING 4 <span>ReGPU</span></div>
+        <div class="logo">PGR4:<span>ReGPU</span></div>
         <div class="tag" id="version">Native PC port</div>
       </div>
     </div>
     <nav class="tabs" id="tabs">
       <button data-tab="play" class="on">Play</button>
-      <button data-tab="graphics">Graphics</button>
       <button data-tab="profiles">Profiles</button>
+      <button data-tab="graphics">Graphics</button>
       <button data-tab="photos">Photos</button>
       <button data-tab="settings">Settings</button>
       <button data-tab="report">Report</button>
       <button data-tab="updates">Updates <span class="dot-badge" id="update-badge" hidden></span></button>
     </nav>
+    <div class="top-right"></div>
     <div class="chips" id="chips"></div>
   </header>
 
@@ -33,10 +34,6 @@
       <div class="toggle-row" data-tip="Skips the legal screen and the splash videos and goes straight to the title screen.">
         <div><div class="toggle-title">Skip intro videos</div><div class="toggle-sub">Straight to "Press START"</div></div>
         <button class="switch" id="skipIntro" role="switch"></button>
-      </div>
-      <div class="toggle-row" data-tip="An extra local-contrast pass on the final picture. Experimental: it can look too strong on some tracks.">
-        <div><div class="toggle-title">Enhanced lighting <span class="badge">beta</span></div><div class="toggle-sub">Extra contrast on the final frame</div></div>
-        <button class="switch" id="enhance" role="switch"></button>
       </div>
       <label class="field" data-tip="The language of the game's menus and text, from the string tables on your disc.">
         <span>Language</span>
@@ -49,6 +46,7 @@
       <div class="panel-head"><h2>Ready</h2></div>
       <div class="summary" id="summary"></div>
       <div class="checklist" id="checklist"></div>
+      <button class="ghost small" id="tu-add" hidden data-tip="Pick your title update file (TU_16L61VP_0000004000000.00000000000G1); it's unpacked into Documents\pgr4\update.">Add title update…</button>
       <div class="launch-box">
         <button class="launch" id="launch" data-tip="Saves these settings and starts the game.">Play</button>
         <div class="status" id="status"></div>
@@ -63,10 +61,6 @@
       <label class="field" data-tip="The size the game renders at. Your display's own modes from 1280x720 up.">
         <span>Resolution</span>
         <select id="resolution"></select>
-      </label>
-      <label class="field" data-tip="Forces a picture shape. Auto follows the resolution. Wider than 16:9 is experimental: the HUD stays in the centre and some objects at the sides can pop in late.">
-        <span>Aspect ratio</span>
-        <select id="aspect"></select>
       </label>
       <div class="field">
         <span>Display mode</span>
@@ -139,6 +133,7 @@
       <div class="list" id="prof-list"></div>
       <div class="buttons-row">
         <button class="ghost small" id="prof-import" data-tip="Adds a profile from a zip made with Export or Back up (yours or someone else's).">Import…</button>
+        <button class="ghost small" id="prof-import360" data-tip="Adds a profile from a PGR4 save copied off an Xbox 360 (the save package from Content\&lt;profile&gt;\4D5307F9\00000001 on the console's drive or a USB stick). It keeps your career and garage.">Import Xbox 360 save…</button>
         <button class="ghost small" data-open="user" data-tip="Opens Documents\pgr4. Profiles are in its profiles folder.">Open folder</button>
       </div>
     </section>
@@ -290,6 +285,7 @@
   </div>
   <div class="tooltip" id="tooltip" hidden></div>
   <div class="toast" id="toast" hidden></div>
+  <script src="host.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
