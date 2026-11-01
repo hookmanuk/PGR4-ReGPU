@@ -674,6 +674,9 @@ GUEST_EXPORT(XamContentCreateEx)
     if (shared)
         if (std::ifstream in(DlcDir() / (fileName + ".license")); in)
             in >> std::hex >> licenseMask;
+    // A zero mask (the Kellogg's Typhon promo package) unlocks nothing: treat it as fully licensed.
+    if (shared && !licenseMask)
+        licenseMask = 0xFFFFFFFF;
     StoreIfNonNull(ctx.r8.u32, licenseMask);
     FinishUi(ctx, StackArg(ctx, 8));
 }
