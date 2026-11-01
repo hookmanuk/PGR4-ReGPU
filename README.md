@@ -1,11 +1,35 @@
 # PGR4:ReGPU
 
-A native PC port of **Project Gotham Racing 4** (Bizarre Creations, 2007, Xbox 360), built with
-[XenonRecomp](https://github.com/hedge-dev/XenonRecomp) and **ReGPU**, our Xbox 360 GPU (Xenos) on
-Direct3D 12.
+A native PC port of **Project Gotham Racing 4** (Bizarre Creations, 2007, Xbox 360). It is not an
+emulator: nothing interprets the console's code or runs it in a virtual machine.
+
+- **The game code is native x64.** [XenonRecomp](https://github.com/hedge-dev/XenonRecomp) translates
+  the game's PowerPC code ahead of time into C++, which is compiled into `pgr4.exe`. The console's
+  kernel and system calls are reimplemented as ordinary Windows code.
+- **The graphics are native Direct3D 12.** **ReGPU**, the renderer in `thirdparty/ReGPU`, turns the
+  game's GPU commands into Direct3D 12 draws, and its shaders (Xenos microcode) into HLSL compiled for
+  your GPU. Pipelines are cached, so a shader compiles once.
 
 This repository is private for now. No game files are included: you need your own copy of the disc
 (and, optionally, Title Update #2 and DLC).
+
+## ReGPU
+
+ReGPU gives the port a PC renderer instead of a GPU emulator. The game draws exactly as it did on the
+console, writing command packets and calling the `Vd*` video functions, and ReGPU builds Direct3D 12
+work from them:
+
+- **Shaders:** each Xenos shader is translated once to HLSL and compiled to a D3D12 pipeline, cached on
+  disk between runs.
+- **Render targets:** the console's 10 MB EDRAM tiles and resolves become D3D12 render targets and
+  copies, with real MSAA.
+- **Textures:** the console's tiled, big-endian formats are converted to D3D12 textures as the game
+  uploads them.
+- **PC features the console never had:** any resolution, FSR 1 upscaling and sharpening, anisotropic
+  filtering, an uncapped or custom frame rate.
+
+It started in the Forza Motorsport 2 port and was proven on this one; fixes made for PGR4 go back into
+it.
 
 ## What's here
 
