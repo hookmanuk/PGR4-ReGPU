@@ -12,6 +12,9 @@
 #include "live_switch.h"
 #include "loader.h"
 #include "kernel/vfs.h"
+#include "settings.h"
+
+void SkipIntroMovieOpened(const std::string& name); // hooks/skip_intro.cpp
 
 namespace fs = std::filesystem;
 
@@ -249,6 +252,19 @@ uint32_t OpenFile(uint32_t handleOut, uint32_t access, uint32_t attributes, uint
     const bool wantDirectory = options & 0x1;   // FILE_DIRECTORY_FILE
     const bool wantFile = options & 0x40;       // FILE_NON_DIRECTORY_FILE
     std::error_code ec;
+    // Skip intro (launcher checkbox, settings skip_intro, PGR4_SKIP_INTRO=1): a boot movie (the Microsoft
+    // Game Studios and Dolby stings, the PGR4 intro) opening arms hooks/skip_intro.cpp, which reports it
+    // finished at once. (Reported missing instead, the intro script waited for it forever.)
+    if (GetSettings().skipIntro)
+    {
+        std::string lower = guest;
+        std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return char(tolower(c)); });
+        for (const char* movie : { "movies\\ms_games.bik", "movies\\dolbysting.bik", "movies\\pgr4_intro.bik" })
+            if (lower.size() >= strlen(movie) && lower.compare(lower.size() - strlen(movie), strlen(movie), movie) == 0)
+            {
+                SkipIntroMovieOpened(guest);
+            }
+    }
     const bool exists = fs::exists(host, ec);
     const bool isDirectory = exists && fs::is_directory(host, ec);
 
