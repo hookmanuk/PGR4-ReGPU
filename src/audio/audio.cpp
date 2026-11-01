@@ -31,7 +31,7 @@ std::atomic<uint32_t> g_callback{ 0 };
 std::atomic<uint32_t> g_callbackArg{ 0 };
 std::shared_ptr<ThreadObject> g_audioThread;
 // PGR4_TRACE_AUDIO=1: once a second, the callbacks run, frames submitted and frames dropped.
-std::atomic<uint32_t> g_statCallbacks{ 0 }, g_statSubmitted{ 0 }, g_statDropped{ 0 }, g_statSkipped{ 0 };
+std::atomic<uint32_t> g_statCallbacks{ 0 }, g_statSubmitted{ 0 }, g_statDropped{ 0 }, g_statSkipped{ 0 }, g_statRepeated{ 0 };
 
 struct Output : IXAudio2VoiceCallback
 {
@@ -91,6 +91,23 @@ struct Output : IXAudio2VoiceCallback
         }
         float* out = &ring[size_t(next) * kFrameSamples * kChannels];
         const uint32_t* in = GuestPtr<uint32_t>(samples);
+        // A frame the same as one of the last four with sound in it: the title's mixer was late and
+        // its driver callback handed over a block it had already submitted (heard as a hitch or
+        // stretched sound; the FM2 port's "repeated"). PGR4_TRACE_AUDIO counts them.
+        static LiveSwitch traceRepeat("PGR4_TRACE_AUDIO");
+        if (traceRepeat)
+        {
+            static std::vector<uint32_t> last(size_t(4) * kFrameSamples * kChannels);
+            static uint32_t slot = 0;
+            bool sound = false, same = false;
+            for (uint32_t i = 0; i < kFrameSamples * kChannels && !sound; i++)
+                sound = in[i] != 0;
+            for (uint32_t k = 0; k < 4 && sound && !same; k++)
+                same = memcmp(&last[size_t(k) * kFrameSamples * kChannels], in, size_t(kFrameSamples) * kChannels * 4) == 0;
+            memcpy(&last[size_t(slot) * kFrameSamples * kChannels], in, size_t(kFrameSamples) * kChannels * 4);
+            slot = (slot + 1) % 4;
+            g_statRepeated += same;
+        }
         for (uint32_t c = 0; c < kChannels; c++)
             for (uint32_t i = 0; i < kFrameSamples; i++)
             {
@@ -115,6 +132,7 @@ struct Output : IXAudio2VoiceCallback
         }();
         if (dump)
         {
+            LOG_ONCE("audio: dump starts");
             fwrite(out, 4, size_t(kFrameSamples) * kChannels, dump);
             fflush(dump);
         }
@@ -143,8 +161,8 @@ void AudioLoop(PPCContext& ctx)
         if (trace && Clock::now() - lastStat >= std::chrono::seconds(1))
         {
             lastStat = Clock::now();
-            Log("audio: 1 s: %u callbacks, %u frames submitted, %u dropped, %u ticks skipped, queued %d, loop %.0f ms behind", g_statCallbacks.exchange(0),
-                g_statSubmitted.exchange(0), g_statDropped.exchange(0), g_statSkipped.exchange(0), queued,
+            Log("audio: 1 s: %u callbacks, %u frames submitted, %u dropped, %u repeated, %u ticks skipped, queued %d, loop %.0f ms behind",
+                g_statCallbacks.exchange(0), g_statSubmitted.exchange(0), g_statDropped.exchange(0), g_statRepeated.exchange(0), g_statSkipped.exchange(0), queued,
                 std::chrono::duration<double, std::milli>(Clock::now() - next).count());
         }
         if (g_output.ok && queued > int(kMaxQueued))
