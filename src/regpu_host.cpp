@@ -4,6 +4,9 @@
 
 #include <windows.h>
 
+#include <dxgi1_6.h>
+#include <wrl/client.h>
+
 #include <atomic>
 #include <string>
 #include <thread>
@@ -13,6 +16,7 @@
 #include "gpu/static_shaders.h"
 #include "kernel/runtime.h"
 #include "kernel/thread.h"
+#include "log.h"
 #include "memory.h"
 #include "settings.h"
 
@@ -103,10 +107,25 @@ void GpuStart()
     // 111 -> 137; paused frames pixel for pixel the same. Workers without early fences are slower (the
     // CPU and GPU still take turns), so they go together. Not on CPUs under 6 threads; the workers stay
     // off with an upscaler on (RendererParallelReady). `regpuctl switch REGPU_NO_DRAW_WORKERS 1`: serial.
-    if (!getenv("REGPU_EARLY_FENCES"))
+    // AMD GPUs: 0.1.2 and 0.1.3 hung the GPU in races (DXGI_ERROR_DEVICE_HUNG in 85 of 96 AMD players' logs;
+    // none of 36 on 0.1.1, none on NVIDIA), so until it's found which of these three does it they stay off there.
+    // settings.ini draw_workers / early_fences / async_splits = 1 or 0 overrides auto.
+    const bool amd = [] {
+        Microsoft::WRL::ComPtr<IDXGIFactory1> factory;
+        Microsoft::WRL::ComPtr<IDXGIAdapter1> adapter;
+        DXGI_ADAPTER_DESC1 d{};
+        return SUCCEEDED(CreateDXGIFactory1(IID_PPV_ARGS(&factory))) && SUCCEEDED(factory->EnumAdapters1(0, &adapter)) &&
+               SUCCEEDED(adapter->GetDesc1(&d)) && d.VendorId == 0x1002; // the default adapter, as the device is made on
+    }();
+    auto on = [&](int setting) { return setting >= 0 ? setting == 1 : !amd; };
+    if (amd)
+        Log("renderer: AMD GPU: draw workers, early fences and async splits off unless settings.ini turns them on");
+    if (!getenv("REGPU_EARLY_FENCES") && on(s.earlyFences))
         _putenv_s("REGPU_EARLY_FENCES", "1");
-    if (!getenv("REGPU_DRAW_WORKERS") && std::thread::hardware_concurrency() >= 6)
+    if (!getenv("REGPU_DRAW_WORKERS") && on(s.drawWorkers) && std::thread::hardware_concurrency() >= 6)
         _putenv_s("REGPU_DRAW_WORKERS", "3");
+    if (!getenv("REGPU_SYNC_SPLITS") && !on(s.asyncSplits))
+        _putenv_s("REGPU_SYNC_SPLITS", "1");
     // The launcher's "Hide the shader compiler box" (the first-boot screen stays).
     if (s.hideShaderOverlay && !getenv("REGPU_NO_OVERLAY"))
         _putenv_s("REGPU_NO_OVERLAY", "1");
