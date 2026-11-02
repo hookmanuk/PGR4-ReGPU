@@ -110,7 +110,9 @@ void GpuStart()
     // The launcher's "Hide the shader compiler box" (the first-boot screen stays).
     if (s.hideShaderOverlay && !getenv("REGPU_NO_OVERLAY"))
         _putenv_s("REGPU_NO_OVERLAY", "1");
-    c.upscaler = regpu::Config::Upscaler(uint32_t(s.upscaler));
+    // FSR 1 is off for now (0.1.2): with it on, the menus drew their panels twice at two scales. FSR 4 is
+    // to replace it. PGR4_UPSCALER still turns it on, for work on it.
+    c.upscaler = getenv("PGR4_UPSCALER") ? regpu::Config::Upscaler(uint32_t(s.upscaler)) : regpu::Config::Upscaler(0);
     c.quality = s.quality;
     c.sharpness = s.sharpness;
     c.userDir = UserDir();

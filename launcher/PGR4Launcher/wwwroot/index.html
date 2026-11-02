@@ -81,11 +81,12 @@
         <span>Anisotropic filtering</span>
         <select id="anisotropy"></select>
       </label>
-      <label class="field" data-tip="Renders the 3D scene at fewer pixels and upscales it with AMD FSR 1; the HUD and menus stay at full resolution. Lower is faster on weak graphics cards (laptops, older GPUs); most PCs are limited by the CPU and gain little. 100% renders at full resolution.">
+      <!-- FSR 1 is off for now (the game ignores it): FSR 4 is to replace it. -->
+      <label class="field" hidden data-tip="Renders the 3D scene at fewer pixels and upscales it with AMD FSR 1; the HUD and menus stay at full resolution. Lower is faster on weak graphics cards (laptops, older GPUs); most PCs are limited by the CPU and gain little. 100% renders at full resolution.">
         <span>Render scale (FSR 1)</span>
         <select id="renderScale"></select>
       </label>
-      <label class="field" data-tip="AMD CAS-style sharpening (FSR 1's RCAS) on the upscaled scene. Works at any render scale; at 100% it only sharpens. Almost free.">
+      <label class="field" hidden data-tip="AMD CAS-style sharpening (FSR 1's RCAS) on the upscaled scene. Works at any render scale; at 100% it only sharpens. Almost free.">
         <span>Sharpening</span>
         <select id="sharpening"></select>
       </label>

@@ -187,7 +187,7 @@ function render() {
   line("Frame rate", `${set.maxFps} fps cap, VSync ${set.vsync ? "on" : "off"}`)
   line("Anti-aliasing", (o.msaa.find((m) => m.value === set.msaa) || { name: "Off" }).name)
   const scale = o.renderScale.find((r) => r.value === set.renderScale)
-  line("Upscaling", set.renderScale < 100 ? `FSR 1, ${scale ? scale.name : set.renderScale + "%"}` : set.sharpening > 0 ? "Off (FSR 1 sharpening only)" : "Off")
+  line("Upscaling", "Off")
   line("Language", lang ? lang.name : "English")
   line("Intro", set.skipIntro ? "skipped" : "plays")
 

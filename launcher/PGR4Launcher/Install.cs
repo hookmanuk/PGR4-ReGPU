@@ -112,7 +112,7 @@ public sealed class GameSettings
         // The nearest preset to the render scale; FSR 1 on below 100% or with sharpening.
         var quality = Array.IndexOf(QualityScale, QualityScale.MinBy(p => Math.Abs(p - Math.Clamp(RenderScale, 33, 100))));
         var sharp = Math.Clamp(Sharpening, 0, 100);
-        var upscaler = quality > 0 || sharp > 0 ? "fsr1" : "off";
+        var upscaler = "off"; // FSR 1 is off for now (its options are hidden; FSR 4 is to replace it)
         sb.Append($"upscaler={upscaler}\nupscale_quality={quality}\nsharpness={(sharp / 100.0).ToString(System.Globalization.CultureInfo.InvariantCulture)}\n");
         foreach (var (k, v) in keep) sb.Append($"{k}={v}\n");
         Directory.CreateDirectory(Paths.User);
