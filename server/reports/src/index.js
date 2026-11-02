@@ -87,7 +87,10 @@ export default {
 // One file per install, replaced by each upload (a manifest only grows). Anything that isn't a manifest
 // line is dropped: it is sender text.
 async function storeManifest(gh, installId, text, id) {
-  const lines = [...new Set(text.split(/\r?\n/).filter((l) => /^P( [0-9a-f]{1,16}){6}(( [0-9a-f]{1,8}){2})?$/.test(l)))];
+  // P: a pipeline; V: a runtime vertex shader as its shipped one plus its patched fetch words (ReGPU VertexPatch)
+  const pipeline = /^P( [0-9a-f]{1,16}){6}(( [0-9a-f]{1,8}){2})?$/;
+  const patch = /^V [0-9a-f]{1,16} [0-9a-f]{1,16}( [0-9a-f]{1,3}:[0-9a-f]{1,8}\.[0-9a-f]{1,8}\.[0-9a-f]{1,8}){1,33}$/;
+  const lines = [...new Set(text.split(/\r?\n/).filter((l) => pipeline.test(l) || patch.test(l)))];
   if (!lines.length || lines.length > 50000) return;
   const path = `/contents/manifests/${installId}.manifest`;
   let sha;

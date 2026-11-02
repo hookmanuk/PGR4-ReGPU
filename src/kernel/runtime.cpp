@@ -67,7 +67,8 @@ void AudioInit();
 void RuntimeInit(const std::filesystem::path& gameDir)
 {
     g_gameDir = std::filesystem::absolute(gameDir);
-    g_userDir = DocumentsUserDir();
+    // PGR4_USER_DIR=<folder>: saves, settings and caches there instead (a first boot, for testing).
+    g_userDir = getenv("PGR4_USER_DIR") ? std::filesystem::absolute(getenv("PGR4_USER_DIR")) : DocumentsUserDir();
     std::filesystem::create_directories(g_userDir / "cache");
 
     g_tscHz = MeasureTsc();
