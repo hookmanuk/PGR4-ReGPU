@@ -96,6 +96,17 @@ void GpuStart()
     for (const char* name : { "REGPU_DIRECT_DYNAMIC_INDICES", "REGPU_UPLOAD_SAMPLED", "REGPU_DYNAMIC_EXPIRE", "REGPU_LEAN_FETCH" })
         if (!getenv(name))
             _putenv_s(name, "1");
+    // The command processor is PGR4's limit (one thread, ~2600 draws a frame; the game's Present waits for
+    // it). Early fences let the title's frame overlap the host GPU, and draw workers translate the long
+    // segments between resolves (the race scene: ~1500 draws) on three more threads, in four pieces.
+    // 5800X St Petersburg race at 720p and 1440p alike: start line 116 -> 158 fps, opening straight
+    // 111 -> 137; paused frames pixel for pixel the same. Workers without early fences are slower (the
+    // CPU and GPU still take turns), so they go together. Not on CPUs under 6 threads; the workers stay
+    // off with an upscaler on (RendererParallelReady). `regpuctl switch REGPU_NO_DRAW_WORKERS 1`: serial.
+    if (!getenv("REGPU_EARLY_FENCES"))
+        _putenv_s("REGPU_EARLY_FENCES", "1");
+    if (!getenv("REGPU_DRAW_WORKERS") && std::thread::hardware_concurrency() >= 6)
+        _putenv_s("REGPU_DRAW_WORKERS", "3");
     // The launcher's "Hide the shader compiler box" (the first-boot screen stays).
     if (s.hideShaderOverlay && !getenv("REGPU_NO_OVERLAY"))
         _putenv_s("REGPU_NO_OVERLAY", "1");

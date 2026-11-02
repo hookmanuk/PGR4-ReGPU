@@ -562,13 +562,14 @@ void StartThreadProfiler()
             CONTEXT c{};
             c.ContextFlags = CONTEXT_FULL;
             const bool ok = GetThreadContext(handle, &c);
-            // PGR4_SAMPLE_CALLERS=1: also the two callers (unwound while the thread is stopped)
+            // PGR4_SAMPLE_CALLERS=1: also the two callers (unwound while the thread is stopped); =N: N callers (up to 6)
             static LiveSwitch callers("PGR4_SAMPLE_CALLERS");
-            DWORD64 up[2] = {};
+            static const int depth = getenv("PGR4_SAMPLE_CALLERS") ? std::clamp(atoi(getenv("PGR4_SAMPLE_CALLERS")) == 1 ? 2 : atoi(getenv("PGR4_SAMPLE_CALLERS")), 1, 6) : 2;
+            DWORD64 up[6] = {};
             if (ok && callers)
             {
                 CONTEXT u = c;
-                for (int k = 0; k < 2; k++)
+                for (int k = 0; k < depth; k++)
                 {
                     DWORD64 imageBase = 0;
                     auto* fn = RtlLookupFunctionEntry(u.Rip, &imageBase, nullptr);
