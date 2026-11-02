@@ -541,6 +541,10 @@ void StartThreadProfiler()
         std::map<std::array<uint32_t, 3>, uint64_t> rvas; // the address, then its callers (PGR4_SAMPLE_CALLERS)
         uint64_t samples = 0;
         auto lastLog = std::chrono::steady_clock::now();
+        // PGR4_SAMPLE_AFTER=<seconds>: start sampling only then (stopping the command processor while it
+        // starts the renderer hung the boot)
+        if (const char* after = getenv("PGR4_SAMPLE_AFTER"))
+            Sleep(DWORD(atoi(after)) * 1000);
         for (;;)
         {
             Sleep(1);
