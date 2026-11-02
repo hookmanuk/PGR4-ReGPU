@@ -461,7 +461,17 @@ bool ReadPad(uint32_t user, PadState& s)
 {
     bool connected = false;
     XINPUT_STATE x{};
-    if (user < XUSER_MAX_COUNT && XInputGetState(user, &x) == ERROR_SUCCESS)
+    // A slot with no pad is asked again once a second: XInputGetState on an empty slot enumerates the
+    // devices (DeviceIoControl), 1-2% of the title's main thread when it read all four every frame.
+    static std::atomic<int64_t> retryAt[XUSER_MAX_COUNT]{};
+    const int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now().time_since_epoch()).count();
+    bool asked = user < XUSER_MAX_COUNT && nowMs >= retryAt[user].load(std::memory_order_relaxed);
+    if (asked && XInputGetState(user, &x) != ERROR_SUCCESS)
+    {
+        retryAt[user].store(nowMs + 1000, std::memory_order_relaxed);
+        asked = false;
+    }
+    if (asked)
     {
         connected = true;
         s.buttons = x.Gamepad.wButtons; // same bit layout as the 360
