@@ -20,7 +20,7 @@ struct Settings
     bool lowPerformance = false;         // old CPUs: renderer optimisations that cost them are off (regpu Config)
     int anisotropy = -1;                 // texture filtering: -1 the game's own, 0 none (trilinear), 2-16 samples
     bool hideShaderOverlay = true;       // no shader compiler box in the corner (REGPU_NO_OVERLAY); on by default
-    // The 0.1.2 renderer threading, each -1 auto (off on AMD GPUs, which hung with them: see regpu_host.cpp), 0 off, 1 on:
+    // The 0.1.2 renderer threading, each -1 auto (on), 0 off, 1 on (see regpu_host.cpp):
     // draw_workers, early_fences, async_splits in settings.ini.
     int drawWorkers = -1, earlyFences = -1, asyncSplits = -1;
     // Upscaling: the 3D scene renders smaller and is upscaled before post-processing and
