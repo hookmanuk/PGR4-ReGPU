@@ -25,7 +25,7 @@ work from them:
   copies, with real MSAA.
 - **Textures:** the console's tiled, big-endian formats are converted to D3D12 textures as the game
   uploads them.
-- **PC features the console never had:** any resolution, FSR 1 upscaling and sharpening, anisotropic
+- **PC features the console never had:** any resolution, anisotropic
   filtering, an uncapped or custom frame rate.
 
 It started in the Forza Motorsport 2 port and was proven on this one; fixes made for PGR4 go back into
@@ -50,7 +50,7 @@ launcher.
 ```sh
 py -3 tools/xiso.py extract "<PGR4 disc>.iso" game
 py -3 tools/stfs.py update "<TU_16L61VP_...>" out/tu2
-sh tools/recomp.sh                 # XenonRecomp: game/default.xex + TU2 -> out/ppc
+sh tools/recomp.sh                 # applies patches/xenonrecomp.patch; XenonRecomp: game/default.xex + TU2 -> out/ppc
 cmake --build build/rel            # pgr4.exe
 dotnet build launcher/PGR4Launcher -c Release
 ```

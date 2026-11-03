@@ -4,6 +4,10 @@
 #             py -3 tools/stfs.py update "<TU_16L61VP_...>" out/tu2
 set -e
 cd "$(dirname "$0")/.."
+# XenonRecomp's fixes for this game (patches/xenonrecomp.patch), unless they're already applied.
+if ! git -C thirdparty/XenonRecomp apply --reverse --check ../../patches/xenonrecomp.patch 2>/dev/null; then
+    git -C thirdparty/XenonRecomp apply ../../patches/xenonrecomp.patch
+fi
 cmd //c "tools\vcenv.cmd ninja -C build/tools xenonrecomp/XenonRecomp/XenonRecomp.exe" | tail -1
 rm -rf out/ppc && mkdir -p out/ppc
 build/tools/xenonrecomp/XenonRecomp/XenonRecomp.exe config/pgr4.toml thirdparty/XenonRecomp/XenonUtils/ppc_context.h > out/recomp.log 2>&1
