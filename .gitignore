@@ -17,3 +17,4 @@ out_*.log
 thirdparty/fidelityfx/
 thirdparty/ffmpeg/
 *.log
+thirdparty/sdl3/

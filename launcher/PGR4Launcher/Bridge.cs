@@ -6,13 +6,16 @@ namespace PGR4Launcher;
 
 /// <summary>
 /// The page's calls: { id, cmd, args } over the window's message channel (wwwroot/host.js), answered with
-/// { id, ok, result | error }. Progress and other pushes go out as { event, ... }.
+/// { id, ok, result | error }. Progress and other pushes go out as { event, ... }. Messages tagged with a frame
+/// ({ frame, msg }) are the Controls tab's, for BindingsHost.
 /// </summary>
 public sealed class Bridge
 {
     static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     readonly PhotinoWindow _window;
     Updater.Release? _latest;
+    /// <summary>The Controls tab's bindings.</summary>
+    public BindingsHost? Controls { get; init; }
 
     public Bridge(PhotinoWindow window)
     {
@@ -24,6 +27,11 @@ public sealed class Bridge
     {
         JsonNode? msg;
         try { msg = JsonNode.Parse(text); } catch { return; }
+        if (msg?["frame"] is not null)
+        {
+            Controls?.OnMessage(msg["msg"]);
+            return;
+        }
         var id = msg?["id"]?.GetValue<int>() ?? 0;
         var cmd = msg?["cmd"]?.GetValue<string>() ?? "";
         var args = msg?["args"];
@@ -69,6 +77,9 @@ public sealed class Bridge
                 ShaderCache.Delete();
                 Game.Launch();
                 return State();
+            case "controls.active":
+                if (Controls is not null) Controls.Active = a!.GetValue<bool>();
+                return null;
             case "dlc.toggle":
                 Dlc.SetEnabled(a!["id"]!.GetValue<string>(), a["enabled"]!.GetValue<bool>());
                 return State();

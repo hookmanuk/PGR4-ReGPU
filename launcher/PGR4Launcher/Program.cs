@@ -54,7 +54,7 @@ internal static class Program
                 "The launcher needs Microsoft Edge WebView2 (part of Windows 11; a free download for Windows 10).\n\n" + ex.Message);
             return 1;
         }
-        _ = new Bridge(window);
+        _ = new Bridge(window) { Controls = new BindingsHost(window) };
         _ = Reports.SendLastLogAsync(); // opted in: the last session's play.log
         window.WaitForClose();
         return 0;

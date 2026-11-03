@@ -14,6 +14,7 @@
 void CrashHandlerInit();
 
 void LogSystemInfo();
+void WheelStart();
 
 int main(int argc, char** argv)
 {
@@ -34,6 +35,7 @@ int main(int argc, char** argv)
     }
     RuntimeInit(gameDir); // also starts ReGPU (regpu_host.cpp) and its debug server (REGPU_DEBUG=1)
     LogSystemInfo(); // sysinfo.cpp: what the player's PC is, for bug reports (needs the user folder)
+    WheelStart(); // input/wheel.cpp: wheels and other controllers through SDL (early: the game asks for player 1 soon)
     ThreadSystemInit(g_title.tlsTemplate, g_title.tlsDataSize, g_title.tlsSlotCount);
 
     void StartThreadProfiler();

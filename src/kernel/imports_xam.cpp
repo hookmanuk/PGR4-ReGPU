@@ -1,13 +1,20 @@
 // XAM: users, profiles, system UI, content packages, input, notifications.
 // The port runs headless: one signed-in local profile, every system dialog
 // answered with its default.
+#include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <deque>
 #include <filesystem>
 #include <fstream>
+#include <map>
+#include <mutex>
+#include <set>
+#include <string>
 #include <vector>
 
+#include "input/wheel.h"
 #include "kernel/imports.h"
 #include "kernel/runtime.h"
 #include "kernel/thread.h"
@@ -426,54 +433,206 @@ bool Key(int vk)
     return GetAsyncKeyState(vk) & 0x8000;
 }
 
+// Keys, mouse buttons and controller inputs bound in the launcher's Controls tab (wheel_bindings.ini; from FM2):
+// "keyboard/k<virtual key>" (mouse buttons are virtual keys 1-6) and "pad/b<n>", "pad/a<n>[-]" in the standard
+// gamepad layout (b0 A ... b6 LT, b7 RT ... b15 D-pad right; a0 left stick X ... a3 right stick Y). A pad input
+// with keys bound uses those instead of its default key; one with controller inputs bound takes them from the
+// controller instead of its own button. Wheels, pedals and button boxes are read by input/wheel.cpp. Read once at start.
+struct PadSource
+{
+    char kind; // 'b' button, 'a' axis
+    int index;
+    bool reverse;
+};
+struct Bound
+{
+    std::vector<int> keys;
+    std::vector<PadSource> pad;
+};
+
+const std::map<std::string, Bound>& Bindings()
+{
+    static const std::map<std::string, Bound> bound = [] {
+        std::map<std::string, Bound> m;
+        std::ifstream in(UserDir() / "wheel_bindings.ini");
+        for (std::string line; std::getline(in, line);)
+        {
+            const size_t eq = line.find('=');
+            if (line.empty() || line[0] == '#' || line[0] == ';' || eq == std::string::npos)
+                continue;
+            const std::string target = line.substr(0, eq);
+            for (size_t at = line.find("keyboard/k", eq); at != std::string::npos; at = line.find("keyboard/k", at + 1))
+                if (const int vk = atoi(line.c_str() + at + 10); vk > 0 && vk < 256)
+                    m[target].keys.push_back(vk);
+            for (size_t at = line.find("pad/", eq); at != std::string::npos; at = line.find("pad/", at + 1))
+            {
+                const char kind = line[at + 4];
+                const int index = atoi(line.c_str() + at + 5);
+                const size_t end = line.find(',', at);
+                const bool reverse = line[(end == std::string::npos ? line.find_last_not_of(" \r") + 1 : end) - 1] == '-';
+                if ((kind == 'b' && index >= 0 && index < 16) || (kind == 'a' && index >= 0 && index < 4))
+                    m[target].pad.push_back({ kind, index, reverse });
+            }
+        }
+        if (!m.empty())
+            Log("controls: %zu pad inputs bound to keys, mouse or controller (wheel_bindings.ini)", m.size());
+        return m;
+    }();
+    return bound;
+}
+
+// The pad input's bound keys if it has any, else its default key, unless another input has that key bound (a key
+// does one thing: bound to the throttle, the up arrow no longer also presses D-pad up).
+bool Pressed(const char* target, int defaultKey)
+{
+    const auto& bound = Bindings();
+    if (const auto it = bound.find(target); it != bound.end() && !it->second.keys.empty())
+        return std::any_of(it->second.keys.begin(), it->second.keys.end(), Key);
+    static const std::set<int> taken = [&] {
+        std::set<int> keys;
+        for (const auto& [name, b] : bound)
+            keys.insert(b.keys.begin(), b.keys.end());
+        return keys;
+    }();
+    return defaultKey && !taken.count(defaultKey) && Key(defaultKey);
+}
+
+// A controller's inputs as bound (Bindings): each pad input with controller inputs bound is driven by those
+// (any of them, the largest for triggers and steering) instead of its own button, stick or trigger.
+void RemapPad(PadState& s)
+{
+    const auto& bound = Bindings();
+    if (bound.empty())
+        return;
+    static const uint16_t kStandard[16] = { XINPUT_GAMEPAD_A, XINPUT_GAMEPAD_B, XINPUT_GAMEPAD_X, XINPUT_GAMEPAD_Y,
+        XINPUT_GAMEPAD_LEFT_SHOULDER, XINPUT_GAMEPAD_RIGHT_SHOULDER, 0, 0, XINPUT_GAMEPAD_BACK, XINPUT_GAMEPAD_START,
+        XINPUT_GAMEPAD_LEFT_THUMB, XINPUT_GAMEPAD_RIGHT_THUMB, XINPUT_GAMEPAD_DPAD_UP, XINPUT_GAMEPAD_DPAD_DOWN,
+        XINPUT_GAMEPAD_DPAD_LEFT, XINPUT_GAMEPAD_DPAD_RIGHT };
+    const PadState raw = s;
+    // A source's value, 0..1 (sticks: -1..1).
+    auto value = [&](const PadSource& p) -> float {
+        if (p.kind == 'a')
+        {
+            const int16_t v[4] = { raw.lx, raw.ly, raw.rx, raw.ry };
+            return (p.reverse ? -1.0f : 1.0f) * float(v[p.index]) / 32767.0f;
+        }
+        if (p.index == 6)
+            return raw.leftTrigger / 255.0f;
+        if (p.index == 7)
+            return raw.rightTrigger / 255.0f;
+        return (raw.buttons & kStandard[p.index]) ? 1.0f : 0.0f;
+    };
+    static const std::pair<const char*, uint16_t> buttons[] = { { "a", XINPUT_GAMEPAD_A }, { "b", XINPUT_GAMEPAD_B },
+        { "x", XINPUT_GAMEPAD_X }, { "y", XINPUT_GAMEPAD_Y }, { "lb", XINPUT_GAMEPAD_LEFT_SHOULDER },
+        { "rb", XINPUT_GAMEPAD_RIGHT_SHOULDER }, { "back", XINPUT_GAMEPAD_BACK }, { "start", XINPUT_GAMEPAD_START },
+        { "ls", XINPUT_GAMEPAD_LEFT_THUMB }, { "rs", XINPUT_GAMEPAD_RIGHT_THUMB }, { "up", XINPUT_GAMEPAD_DPAD_UP },
+        { "down", XINPUT_GAMEPAD_DPAD_DOWN }, { "left", XINPUT_GAMEPAD_DPAD_LEFT }, { "right", XINPUT_GAMEPAD_DPAD_RIGHT } };
+    for (const auto& [target, bit] : buttons)
+        if (const auto it = bound.find(target); it != bound.end() && !it->second.pad.empty())
+        {
+            bool on = false;
+            for (const PadSource& p : it->second.pad)
+                on |= value(p) >= 0.5f;
+            s.buttons = uint16_t((s.buttons & ~bit) | (on ? bit : 0));
+        }
+    auto trigger = [&](const char* target, uint8_t& out) {
+        if (const auto it = bound.find(target); it != bound.end() && !it->second.pad.empty())
+        {
+            float v = 0;
+            for (const PadSource& p : it->second.pad)
+                v = std::max(v, std::fabs(value(p)));
+            out = uint8_t(std::lround(std::min(v, 1.0f) * 255.0f));
+        }
+    };
+    trigger("throttle", s.rightTrigger);
+    trigger("brake", s.leftTrigger);
+    // Steering: a bound stick, and buttons for each side.
+    float steer = 0;
+    bool steerBound = false;
+    if (const auto it = bound.find("steer"); it != bound.end() && !it->second.pad.empty())
+        for (const PadSource& p : it->second.pad)
+            if (p.kind == 'a' && std::fabs(value(p)) > std::fabs(steer))
+                steer = value(p), steerBound = true;
+    for (const auto& [target, sign] : { std::pair{ "steerleft", -1.0f }, { "steerright", 1.0f } })
+        if (const auto it = bound.find(target); it != bound.end())
+            for (const PadSource& p : it->second.pad)
+                if (value(p) >= 0.5f)
+                    steer = sign, steerBound = true; // only while held: the stick steers otherwise
+    if (steerBound)
+        s.lx = int16_t(std::lround(std::clamp(steer, -1.0f, 1.0f) * 32767.0f));
+}
+
 void AddKeyboard(PadState& s)
 {
     if (!regpu::WindowHasFocus())
         return;
     struct Map
     {
+        const char* target;
         int vk;
         uint16_t button;
     };
     static const Map buttons[] = {
-        { VK_UP, XINPUT_GAMEPAD_DPAD_UP }, { VK_DOWN, XINPUT_GAMEPAD_DPAD_DOWN }, { VK_LEFT, XINPUT_GAMEPAD_DPAD_LEFT },
-        { VK_RIGHT, XINPUT_GAMEPAD_DPAD_RIGHT }, { VK_ESCAPE, XINPUT_GAMEPAD_START }, { VK_TAB, XINPUT_GAMEPAD_BACK },
-        { 'Q', XINPUT_GAMEPAD_LEFT_SHOULDER }, { 'E', XINPUT_GAMEPAD_RIGHT_SHOULDER }, { VK_RETURN, XINPUT_GAMEPAD_A },
-        { VK_BACK, XINPUT_GAMEPAD_B }, { VK_SPACE, XINPUT_GAMEPAD_X }, { 'Y', XINPUT_GAMEPAD_Y },
+        { "up", VK_UP, XINPUT_GAMEPAD_DPAD_UP }, { "down", VK_DOWN, XINPUT_GAMEPAD_DPAD_DOWN },
+        { "left", VK_LEFT, XINPUT_GAMEPAD_DPAD_LEFT }, { "right", VK_RIGHT, XINPUT_GAMEPAD_DPAD_RIGHT },
+        { "start", VK_ESCAPE, XINPUT_GAMEPAD_START }, { "back", VK_TAB, XINPUT_GAMEPAD_BACK },
+        { "lb", 'Q', XINPUT_GAMEPAD_LEFT_SHOULDER }, { "rb", 'E', XINPUT_GAMEPAD_RIGHT_SHOULDER },
+        { "a", VK_RETURN, XINPUT_GAMEPAD_A }, { "b", VK_BACK, XINPUT_GAMEPAD_B }, { "x", VK_SPACE, XINPUT_GAMEPAD_X },
+        { "y", 'Y', XINPUT_GAMEPAD_Y }, { "ls", 0, XINPUT_GAMEPAD_LEFT_THUMB }, { "rs", 0, XINPUT_GAMEPAD_RIGHT_THUMB },
     };
     for (const Map& m : buttons)
-        if (Key(m.vk))
+        if (Pressed(m.target, m.vk))
             s.buttons |= m.button;
-    if (Key('W'))
+    if (Pressed("throttle", 'W'))
         s.rightTrigger = 255;
-    if (Key('S'))
+    if (Pressed("brake", 'S'))
         s.leftTrigger = 255;
-    if (Key('A') != Key('D'))
-        s.lx = Key('A') ? -32767 : 32767;
+    if (const bool l = Pressed("steerleft", 'A'), r = Pressed("steerright", 'D'); l != r)
+        s.lx = l ? -32767 : 32767;
     if (Key('J') != Key('L'))
         s.rx = Key('J') ? -32767 : 32767;
     if (Key('I') != Key('K'))
         s.ry = Key('K') ? -32767 : 32767;
 }
 
-// Returns false if nothing is connected for this user.
-bool ReadPad(uint32_t user, PadState& s)
+int g_xinputPads = 0; // connected XInput pads (PadSlot): SDL's pads (GamepadRead) are the players after them
+
+// Players are the connected pads in slot order: player 1 is the first connected pad whatever its XInput slot (a pad
+// left in slot 2, after a virtual pad from Steam Input or DS4Windows took slot 1, otherwise played as player 2). The
+// slots are looked up again every second: XInputGetState on an empty slot enumerates the devices (DeviceIoControl),
+// 1-2% of the title's main thread when it read all four every frame. (From FM2.)
+DWORD PadSlot(uint32_t user)
 {
-    bool connected = false;
-    XINPUT_STATE x{};
-    // A slot with no pad is asked again once a second: XInputGetState on an empty slot enumerates the
-    // devices (DeviceIoControl), 1-2% of the title's main thread when it read all four every frame.
-    static std::atomic<int64_t> retryAt[XUSER_MAX_COUNT]{};
-    const int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now().time_since_epoch()).count();
-    bool asked = user < XUSER_MAX_COUNT && nowMs >= retryAt[user].load(std::memory_order_relaxed);
-    if (asked && XInputGetState(user, &x) != ERROR_SUCCESS)
+    static std::mutex slotMutex;
+    static int slotOf[XUSER_MAX_COUNT] = { 0, 1, 2, 3 };
+    static Clock::time_point slotsChecked{};
+    std::lock_guard lock(slotMutex);
+    if (const auto now = Clock::now(); now - slotsChecked > std::chrono::seconds(1))
     {
-        retryAt[user].store(nowMs + 1000, std::memory_order_relaxed);
-        asked = false;
+        slotsChecked = now;
+        int n = 0;
+        XINPUT_STATE probe{};
+        for (DWORD slot = 0; slot < XUSER_MAX_COUNT; slot++)
+            if (XInputGetState(slot, &probe) == ERROR_SUCCESS)
+                slotOf[n++] = int(slot);
+        g_xinputPads = n;
+        for (DWORD slot = 0; slot < XUSER_MAX_COUNT && n < int(XUSER_MAX_COUNT); slot++)
+            if (std::find(slotOf, slotOf + n, int(slot)) == slotOf + n)
+                slotOf[n++] = int(slot);
     }
-    if (asked)
+    return DWORD(slotOf[user < XUSER_MAX_COUNT ? user : 0]);
+}
+
+// Player `user`'s controller: an XInput pad, else a pad XInput doesn't see (DualSense, DualShock 4, Switch Pro and
+// other DirectInput pads through SDL: input/wheel.cpp), with the Controls tab's bindings applied.
+bool ReadDevice(uint32_t user, PadState& s)
+{
+    if (user >= XUSER_MAX_COUNT)
+        return false;
+    const DWORD slot = PadSlot(user);
+    XINPUT_STATE x{};
+    if (int(user) < g_xinputPads && XInputGetState(slot, &x) == ERROR_SUCCESS)
     {
-        connected = true;
         s.buttons = x.Gamepad.wButtons; // same bit layout as the 360
         s.leftTrigger = x.Gamepad.bLeftTrigger;
         s.rightTrigger = x.Gamepad.bRightTrigger;
@@ -481,11 +640,43 @@ bool ReadPad(uint32_t user, PadState& s)
         s.ly = x.Gamepad.sThumbLY;
         s.rx = x.Gamepad.sThumbRX;
         s.ry = x.Gamepad.sThumbRY;
+        if (s.buttons || s.leftTrigger > 64 || s.rightTrigger > 64 || std::abs(s.lx) > 16000 || std::abs(s.ly) > 16000)
+            NoteXInputPadUsed();
     }
+    else if (int(user) >= g_xinputPads)
+    {
+        const GamepadInput g = GamepadRead(user - uint32_t(g_xinputPads));
+        if (!g.present)
+            return false;
+        s.buttons = g.buttons;
+        s.leftTrigger = g.leftTrigger;
+        s.rightTrigger = g.rightTrigger;
+        s.lx = g.lx, s.ly = g.ly, s.rx = g.rx, s.ry = g.ry;
+    }
+    else
+        return false;
+    RemapPad(s);
+    return true;
+}
+
+// Returns false if nothing is connected for this user.
+bool ReadPad(uint32_t user, PadState& s)
+{
+    // Each player's own controller (split screen); the keyboard and a racing wheel are player 1's.
+    bool connected = ReadDevice(user, s);
     if (user == 0)
     {
         connected = true;
         AddKeyboard(s);
+        // A racing wheel (input/wheel.cpp): its steering replaces the left stick's X, its pedals and buttons add to
+        // the pad's.
+        if (const WheelInput w = WheelRead(); w.present)
+        {
+            s.lx = w.steer;
+            s.leftTrigger = std::max(s.leftTrigger, w.brake);
+            s.rightTrigger = std::max(s.rightTrigger, w.gas);
+            s.buttons |= w.buttons;
+        }
         static LiveSwitch autoStart("PGR4_AUTOSTART");
         static const auto start = Clock::now();
         if (autoStart)
@@ -630,7 +821,10 @@ GUEST_EXPORT(XamInputSetState)
         XINPUT_VIBRATION v{};
         v.wLeftMotorSpeed = __builtin_bswap16(*GuestPtr<uint16_t>(ctx.r5.u32));
         v.wRightMotorSpeed = __builtin_bswap16(*GuestPtr<uint16_t>(ctx.r5.u32 + 2));
-        XInputSetState(user, &v); // ignored when no pad is connected
+        if (int(user) < g_xinputPads)
+            XInputSetState(PadSlot(user), &v);
+        else
+            GamepadRumble(user - uint32_t(g_xinputPads), v.wLeftMotorSpeed, v.wRightMotorSpeed);
     }
     Return(ctx, X_ERROR_SUCCESS);
 }

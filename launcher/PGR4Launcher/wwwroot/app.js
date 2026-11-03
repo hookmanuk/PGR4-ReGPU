@@ -129,11 +129,16 @@ $("tabs").onclick = (e) => {
   const b = e.target.closest("button")
   if (!b) return
   for (const t of $("tabs").children) t.classList.toggle("on", t === b)
-  for (const p of ["play", "graphics", "profiles", "photos", "settings", "report", "updates"]) $("page-" + p).hidden = p !== b.dataset.tab
+  for (const p of ["play", "graphics", "profiles", "controls", "photos", "settings", "report", "updates"]) $("page-" + p).hidden = p !== b.dataset.tab
+  // The Controls tab streams live input only while it's shown.
+  call("controls.active", b.dataset.tab === "controls").catch(() => {})
+  // Leaving Controls: it may have changed the wheel settings, which this page saves with the rest.
+  const left = $("tabs").dataset.shown
+  $("tabs").dataset.shown = b.dataset.tab
   if (b.dataset.tab === "photos") loadPhotos()
   else if (b.dataset.tab === "profiles") loadProfiles()
   else if (b.dataset.tab === "report") loadReport()
-  else if (b.dataset.tab !== "play") refresh()
+  else if (b.dataset.tab !== "controls" && (b.dataset.tab !== "play" || left === "controls")) refresh()
 }
 
 // ---- drawing

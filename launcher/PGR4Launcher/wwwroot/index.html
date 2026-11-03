@@ -17,6 +17,7 @@
     <nav class="tabs" id="tabs">
       <button data-tab="play" class="on">Play</button>
       <button data-tab="profiles">Profiles</button>
+      <button data-tab="controls">Controls</button>
       <button data-tab="graphics">Graphics</button>
       <button data-tab="photos">Photos</button>
       <button data-tab="settings">Settings</button>
@@ -124,6 +125,10 @@
   </main>
 
   <!-- PROFILES -->
+  <main class="page page-controls" id="page-controls" hidden>
+    <iframe name="controls" id="controls-frame" src="bindings.html?embedded=1" title="Controls" allow="gamepad"></iframe>
+  </main>
+
   <main class="page grid3" id="page-profiles" hidden>
     <section class="panel">
       <div class="panel-head">

@@ -62,6 +62,15 @@ target_compile_definitions(pgr4 PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE
 target_compile_options(pgr4 PRIVATE -gline-tables-only)
 target_link_options(pgr4 PRIVATE /STACK:0x1000000 /DEBUG)
 target_link_libraries(pgr4 PRIVATE dbghelp xaudio2 bcrypt winhttp d3d12 dxgi) # d3d12, dxgi: sysinfo.cpp
+# Racing wheels, controllers XInput doesn't see and their bindings through SDL3 (zlib; input/wheel.cpp, from FM2),
+# linked dynamically: thirdparty/sdl3 is SDL3's VC development package.
+set(PGR4_SDL3 "${CMAKE_SOURCE_DIR}/thirdparty/sdl3")
+if(NOT EXISTS "${PGR4_SDL3}/include/SDL3/SDL.h")
+    message(FATAL_ERROR "thirdparty/sdl3 is missing: copy SDL3's VC development package there")
+endif()
+target_include_directories(pgr4 PRIVATE "${PGR4_SDL3}/include")
+target_link_libraries(pgr4 PRIVATE "${PGR4_SDL3}/lib/SDL3.lib")
+add_custom_command(TARGET pgr4 POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different "${PGR4_SDL3}/lib/SDL3.dll" $<TARGET_FILE_DIR:pgr4>)
 # Microsoft's HLSL compiler beside pgr4.exe (ReGPU loads it from there; Wine's can't compile its shaders).
 add_custom_command(TARGET pgr4 POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different "${REGPU_D3DCOMPILER}" $<TARGET_FILE_DIR:pgr4>)
 

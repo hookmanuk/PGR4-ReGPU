@@ -23,6 +23,12 @@ struct Settings
     // The 0.1.2 renderer threading, each -1 auto (on), 0 off, 1 on (see regpu_host.cpp):
     // draw_workers, early_fences, async_splits in settings.ini.
     int drawWorkers = -1, earlyFences = -1, asyncSplits = -1;
+    // Racing wheels (input/wheel.cpp, from FM2): force feedback strength and the centring spring and damper on top of
+    // it (percent), the steering force reversed, and the rotation the wheel is set to in its own software (degrees;
+    // the game steers as the 360 wheel's 270 from it; 0 uses the wheel's range as it is).
+    uint32_t wheelStrength = 50, wheelSpring = 50;
+    bool wheelReverse = false;
+    uint32_t wheelRotation = 0;
     // Upscaling: the 3D scene renders smaller and is upscaled before post-processing and
     // the HUD, which stay at full resolution.
     enum class Upscaler : uint32_t { Off, Fsr1, Fsr3, Dlss };

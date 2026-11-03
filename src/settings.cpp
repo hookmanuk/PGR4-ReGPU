@@ -84,6 +84,14 @@ void Load()
             g_settings.anisotropy = atoi(value.c_str());
         else if (key == "hide_shader_overlay")
             g_settings.hideShaderOverlay = value == "1";
+        else if (key == "wheel_strength")
+            g_settings.wheelStrength = uint32_t(atoi(value.c_str()));
+        else if (key == "wheel_spring")
+            g_settings.wheelSpring = uint32_t(atoi(value.c_str()));
+        else if (key == "wheel_reverse")
+            g_settings.wheelReverse = value == "1";
+        else if (key == "wheel_rotation")
+            g_settings.wheelRotation = uint32_t(atoi(value.c_str()));
         else if (key == "draw_workers" || key == "early_fences" || key == "async_splits")
             (key == "draw_workers" ? g_settings.drawWorkers : key == "early_fences" ? g_settings.earlyFences : g_settings.asyncSplits) =
                 value == "1" ? 1 : value == "0" ? 0 : -1;
@@ -99,6 +107,14 @@ void Load()
         g_settings.width = 1280 * s;
         g_settings.height = 720 * s;
     }
+    if (const char* v = getenv("PGR4_WHEEL_STRENGTH"))
+        g_settings.wheelStrength = uint32_t(atoi(v));
+    if (const char* v = getenv("PGR4_WHEEL_SPRING"))
+        g_settings.wheelSpring = uint32_t(atoi(v));
+    if (const char* v = getenv("PGR4_WHEEL_REVERSE"))
+        g_settings.wheelReverse = atoi(v) != 0;
+    if (const char* v = getenv("PGR4_WHEEL_ROTATION"))
+        g_settings.wheelRotation = uint32_t(atoi(v));
     if (const char* v = getenv("PGR4_MAX_FPS"))
         g_settings.maxFps = uint32_t(atoi(v));
     if (const char* v = getenv("PGR4_VSYNC"))
@@ -198,6 +214,8 @@ void SaveSettings()
     out << "sharpness=" << s.sharpness << "\n";
     out << "anisotropy=" << s.anisotropy << "\n";
     out << "hide_shader_overlay=" << (s.hideShaderOverlay ? 1 : 0) << "\n";
+    out << "wheel_strength=" << s.wheelStrength << "\nwheel_spring=" << s.wheelSpring << "\nwheel_reverse=" << (s.wheelReverse ? 1 : 0)
+        << "\nwheel_rotation=" << s.wheelRotation << "\n";
     if (s.drawWorkers >= 0)
         out << "draw_workers=" << s.drawWorkers << "\n";
     if (s.earlyFences >= 0)

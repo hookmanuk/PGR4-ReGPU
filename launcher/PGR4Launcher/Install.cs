@@ -53,13 +53,19 @@ public sealed class GameSettings
     public bool LowPerformance { get; set; }
     public int Language { get; set; } = 1;
     public int Anisotropy { get; set; } = -1; // -1 the game's own filtering
+    // Racing wheels (the Controls tab): force feedback and centring spring (percent), the force reversed, the rotation
+    // set on the wheel (degrees, 0 as it is). The game reads them in src/input/wheel.cpp.
+    public int WheelStrength { get; set; } = 50;
+    public int WheelSpring { get; set; } = 50;
+    public bool WheelReverse { get; set; }
+    public int WheelRotation { get; set; }
     public bool HideShaderOverlay { get; set; } = true; // on unless turned off
     // FSR 1 (upscaler=fsr1): the scene's share of the resolution per axis, one of the game's presets
     // (Options.RenderScale; 100 = native), and its sharpening 0-100 (sharpness 0-1). Off at 100 and 0.
     public int RenderScale { get; set; } = 100;
     public int Sharpening { get; set; }
 
-    static readonly string[] Known = ["profile", "resolution", "aspect", "fullscreen", "vsync", "max_fps", "msaa", "enhance", "skip_intro", "low_performance", "language", "anisotropy", "hide_shader_overlay", "upscaler", "upscale_quality", "sharpness"];
+    static readonly string[] Known = ["profile", "resolution", "aspect", "fullscreen", "vsync", "max_fps", "msaa", "enhance", "skip_intro", "low_performance", "language", "anisotropy", "hide_shader_overlay", "upscaler", "upscale_quality", "sharpness", "wheel_strength", "wheel_spring", "wheel_reverse", "wheel_rotation"];
     // upscale_quality's presets (src/settings.cpp SceneScale): native, 1.5x, 1.7x, 2x and 3x per axis.
     static readonly int[] QualityScale = [100, 67, 59, 50, 33];
 
@@ -73,6 +79,10 @@ public sealed class GameSettings
             switch (k)
             {
                 case "anisotropy": s.Anisotropy = int.TryParse(v, out var an) ? an : -1; break;
+                case "wheel_strength": s.WheelStrength = int.TryParse(v, out var ws) ? ws : 50; break;
+                case "wheel_spring": s.WheelSpring = int.TryParse(v, out var wp) ? wp : 50; break;
+                case "wheel_reverse": s.WheelReverse = v == "1"; break;
+                case "wheel_rotation": s.WheelRotation = int.TryParse(v, out var wr) ? wr : 0; break;
                 case "hide_shader_overlay": s.HideShaderOverlay = v == "1"; break;
                 case "upscaler": upscaler = v; break;
                 case "upscale_quality": quality = int.TryParse(v, out var q) ? Math.Clamp(q, 0, 4) : 1; break;
@@ -109,6 +119,7 @@ public sealed class GameSettings
         sb.Append($"resolution={Resolution}\naspect={Aspect}\nfullscreen={B(Fullscreen)}\nvsync={B(Vsync)}\n");
         sb.Append($"max_fps={Math.Clamp(MaxFps, 30, 360)}\nmsaa={Msaa}\nenhance=0\nskip_intro={B(SkipIntro)}\nlow_performance={B(LowPerformance)}\nlanguage={Language}\n");
         sb.Append($"anisotropy={(Anisotropy < 0 ? -1 : Math.Clamp(Anisotropy, 0, 16))}\nhide_shader_overlay={B(HideShaderOverlay)}\n");
+        sb.Append($"wheel_strength={Math.Clamp(WheelStrength, 0, 100)}\nwheel_spring={Math.Clamp(WheelSpring, 0, 100)}\nwheel_reverse={B(WheelReverse)}\nwheel_rotation={Math.Clamp(WheelRotation, 0, 3600)}\n");
         // The nearest preset to the render scale; FSR 1 on below 100% or with sharpening.
         var quality = Array.IndexOf(QualityScale, QualityScale.MinBy(p => Math.Abs(p - Math.Clamp(RenderScale, 33, 100))));
         var sharp = Math.Clamp(Sharpening, 0, 100);
