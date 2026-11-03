@@ -110,6 +110,11 @@ void GpuStart()
     auto on = [](int setting) { return setting != 0; };
     if (!getenv("REGPU_EARLY_FENCES") && on(s.earlyFences))
         _putenv_s("REGPU_EARLY_FENCES", "1");
+    // Fences themselves land after the host GPU: told early, the title freed and overwrote scenery the GPU had yet to draw
+    // (exploded geometry; REGPU_TRACE_OVERWRITE counted 24 overwrites in a race-restart test, 0 this way). Its Present no
+    // longer waits on them (hooks/present_wait.cpp), which keeps the frame overlapping the GPU.
+    if (!getenv("REGPU_TRUTHFUL_FENCES") && !getenv("PGR4_LYING_FENCES") && on(s.earlyFences))
+        _putenv_s("REGPU_TRUTHFUL_FENCES", "1");
     if (!getenv("REGPU_DRAW_WORKERS") && on(s.drawWorkers) && std::thread::hardware_concurrency() >= 6)
         _putenv_s("REGPU_DRAW_WORKERS", "3");
     if (!getenv("REGPU_SYNC_SPLITS") && !on(s.asyncSplits))
