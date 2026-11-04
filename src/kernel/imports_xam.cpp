@@ -623,12 +623,24 @@ DWORD PadSlot(uint32_t user)
     return DWORD(slotOf[user < XUSER_MAX_COUNT ? user : 0]);
 }
 
+// Only player 1 is signed in, so a pad in a later position (an idle virtual pad or a second controller ahead of the one
+// in hand) started the game without a profile: new driver, nothing saved. The first pad pressed swaps places with
+// player 1; that press is held back, to reach the game as player 1's. PGR4_NO_LEAD_PAD=1: off.
+std::atomic<int> g_leadPad{ -1 }; // the device playing as player 1; -1 until a pad is pressed
+
+uint32_t DeviceOf(uint32_t user)
+{
+    const int lead = g_leadPad.load(std::memory_order_relaxed);
+    return lead <= 0 ? user : user == 0 ? uint32_t(lead) : user == uint32_t(lead) ? 0 : user;
+}
+
 // Player `user`'s controller: an XInput pad, else a pad XInput doesn't see (DualSense, DualShock 4, Switch Pro and
 // other DirectInput pads through SDL: input/wheel.cpp), with the Controls tab's bindings applied.
-bool ReadDevice(uint32_t user, PadState& s)
+bool ReadDevice(uint32_t player, PadState& s)
 {
-    if (user >= XUSER_MAX_COUNT)
+    if (player >= XUSER_MAX_COUNT)
         return false;
+    const uint32_t user = DeviceOf(player);
     const DWORD slot = PadSlot(user);
     XINPUT_STATE x{};
     if (int(user) < g_xinputPads && XInputGetState(slot, &x) == ERROR_SUCCESS)
@@ -656,6 +668,16 @@ bool ReadDevice(uint32_t user, PadState& s)
     else
         return false;
     RemapPad(s);
+    static const bool noLead = getenv("PGR4_NO_LEAD_PAD") != nullptr;
+    if (s.buttons && !noLead && g_leadPad.load(std::memory_order_relaxed) < 0)
+    {
+        g_leadPad = int(user);
+        if (user != 0)
+        {
+            Log("input: the first pad pressed is device %u, now player 1", user);
+            s.buttons = 0;
+        }
+    }
     return true;
 }
 
@@ -821,10 +843,11 @@ GUEST_EXPORT(XamInputSetState)
         XINPUT_VIBRATION v{};
         v.wLeftMotorSpeed = __builtin_bswap16(*GuestPtr<uint16_t>(ctx.r5.u32));
         v.wRightMotorSpeed = __builtin_bswap16(*GuestPtr<uint16_t>(ctx.r5.u32 + 2));
-        if (int(user) < g_xinputPads)
-            XInputSetState(PadSlot(user), &v);
+        const uint32_t device = DeviceOf(user);
+        if (int(device) < g_xinputPads)
+            XInputSetState(PadSlot(device), &v);
         else
-            GamepadRumble(user - uint32_t(g_xinputPads), v.wLeftMotorSpeed, v.wRightMotorSpeed);
+            GamepadRumble(device - uint32_t(g_xinputPads), v.wLeftMotorSpeed, v.wRightMotorSpeed);
     }
     Return(ctx, X_ERROR_SUCCESS);
 }
