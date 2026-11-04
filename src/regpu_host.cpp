@@ -115,6 +115,11 @@ void GpuStart()
     // longer waits on them (hooks/present_wait.cpp), which keeps the frame overlapping the GPU.
     if (!getenv("REGPU_TRUTHFUL_FENCES") && !getenv("PGR4_LYING_FENCES") && on(s.earlyFences))
         _putenv_s("REGPU_TRUTHFUL_FENCES", "1");
+    // Interrupts and scratch write-backs need not wait for fences still behind the host GPU: draining them on the
+    // command processor made it and the GPU take turns (London grid 86 -> 147 fps, RTX 4070, and 0 overwrites in the
+    // race-restart test). Fences themselves still land after the GPU. PGR4_FENCE_ORDER=1: the drain, as in 0.1.7.
+    if (getenv("REGPU_TRUTHFUL_FENCES") && !getenv("REGPU_NO_FENCE_ORDER") && !getenv("PGR4_FENCE_ORDER"))
+        _putenv_s("REGPU_NO_FENCE_ORDER", "1");
     if (!getenv("REGPU_DRAW_WORKERS") && on(s.drawWorkers) && std::thread::hardware_concurrency() >= 6)
         _putenv_s("REGPU_DRAW_WORKERS", "3");
     if (!getenv("REGPU_SYNC_SPLITS") && !on(s.asyncSplits))
