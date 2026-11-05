@@ -121,18 +121,18 @@ public static class Updater
         {
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
             bool ours = target.StartsWith(self, StringComparison.OrdinalIgnoreCase);
-            if (File.Exists(target))
-            {
-                if (ours)
-                {
-                    var old = target + ".old";
-                    if (File.Exists(old)) File.Delete(old);
-                    File.Move(target, old); // the running launcher's files: rename, then write the new one
-                    launcher = true;
-                }
-            }
             var temp = target + ".new";
             e.ExtractToFile(temp, true);
+            if (File.Exists(target) && SameFile(temp, target)) { File.Delete(temp); continue; } // unchanged (e.g. SDL3.dll, held open by the Controls tab)
+            if (File.Exists(target))
+            {
+                if (ours) { RenameAside(target); launcher = true; } // the running launcher's files: rename, then write the new one
+                else
+                {
+                    try { File.Move(temp, target, true); files++; continue; }
+                    catch (Exception x) when (x is UnauthorizedAccessException or IOException) { RenameAside(target); } // loaded by this process
+                }
+            }
             File.Move(temp, target, true);
             files++;
         }
@@ -140,13 +140,32 @@ public static class Updater
         return new Applied(files, launcher);
     }
 
-    /// <summary>Leftovers of a launcher update (renamed while it ran).</summary>
+    static void RenameAside(string target)
+    {
+        var old = target + ".old";
+        if (File.Exists(old)) File.Delete(old);
+        File.Move(target, old); // Windows lets a file in use be renamed, not overwritten
+    }
+
+    static bool SameFile(string a, string b)
+    {
+        var fa = new FileInfo(a); var fb = new FileInfo(b);
+        if (fa.Length != fb.Length) return false;
+        using var sa = File.OpenRead(a);
+        using var sb = new FileStream(b, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var h = System.Security.Cryptography.SHA256.Create();
+        return h.ComputeHash(sa).AsSpan().SequenceEqual(h.ComputeHash(sb));
+    }
+
+    /// <summary>Leftovers of an update (files renamed while in use).</summary>
     public static void CleanUp()
     {
         try
         {
-            foreach (var f in Directory.EnumerateFiles(AppContext.BaseDirectory, "*.old", SearchOption.AllDirectories))
-                try { File.Delete(f); } catch { }
+            foreach (var dir in new[] { AppContext.BaseDirectory, Path.GetDirectoryName(Paths.Exe)! })
+                if (Directory.Exists(dir))
+                    foreach (var f in Directory.EnumerateFiles(dir, "*.old", SearchOption.AllDirectories))
+                        try { File.Delete(f); } catch { }
         }
         catch { }
     }
