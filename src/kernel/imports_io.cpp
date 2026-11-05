@@ -12,6 +12,8 @@
 #include "live_switch.h"
 #include "loader.h"
 #include "kernel/vfs.h"
+
+void PatchUiStrings(uint8_t* data, uint32_t size); // hooks/lua.cpp
 #include "settings.h"
 
 void SkipIntroMovieOpened(const std::string& name); // hooks/skip_intro.cpp
@@ -408,6 +410,8 @@ GUEST_EXPORT(NtReadFile)
         std::replace(guest.begin(), guest.end(), '\\', '/');
         if (guest.find("/audio/music/") != std::string::npos && guest.compare(guest.size() - 4, 4, ".xma") == 0)
             AudioNoteMusicRead(file->path, offset, GuestPtr<uint8_t>(buffer), read);
+        else if (guest.size() >= 17 && guest.compare(guest.size() - 17, 17, "pgr4uistrings.loc") == 0)
+            PatchUiStrings(GuestPtr<uint8_t>(buffer), read);
     }
 
     uint32_t status = X_STATUS_SUCCESS;
