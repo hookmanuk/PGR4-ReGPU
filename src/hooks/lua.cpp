@@ -10,6 +10,10 @@
 #include "log.h"
 #include "memory.h"
 
+// hooks/graphics_menu.cpp
+std::string GraphicsMenuPatch();
+bool GraphicsMenuCommand(const char* text, size_t len);
+
 PPC_FUNC_IMPL(__imp__sub_82510260);
 
 // luaD_throw
@@ -22,7 +26,8 @@ PPC_FUNC(sub_82510260)
     {
         const uint32_t str = __builtin_bswap32(*GuestPtr<uint32_t>(top - 16));
         const uint32_t len = __builtin_bswap32(*GuestPtr<uint32_t>(str + 12));
-        Log("lua: error %u: %.*s", errcode, int(len < 1024 ? len : 1024), GuestPtr<const char>(str + 16));
+        if (!GraphicsMenuCommand(GuestPtr<const char>(str + 16), len))
+            Log("lua: error %u: %.*s", errcode, int(len < 1024 ? len : 1024), GuestPtr<const char>(str + 16));
     }
     else
         Log("lua: error %u (value type %u)", errcode, tag);
@@ -125,6 +130,8 @@ void PatchUiStrings(uint8_t* data, uint32_t size)
 {
     ReplaceText(data, size, "EXIT DEMO", "QUIT GAME");
     ReplaceText(data, size, "Quit the PGR 4 Demo", "Close PGR 4");
+    // Options > Graphics is the PC's resolution and anti-aliasing (graphics_menu.cpp).
+    ReplaceText(data, size, "Adjust your TV settings to optimize PGR 4's graphical look", "Resolution, anti-aliasing and display mode");
 }
 
 // The main menu's Quit item: SetNextScreen("Quit") is caught by the script lookup below and closes the game.
@@ -186,6 +193,8 @@ PPC_FUNC(sub_82508568)
     g_runningScript.clear();
     if (ctx.r3.u32 == 0 && EndsWith(name, "Intro\\MainMenu.lua"))
         RunLua(ctx, base, L, kMainMenuPatch, "MainMenu patch");
+    else if (ctx.r3.u32 == 0 && EndsWith(name, "Options\\Graphics.lua"))
+        RunLua(ctx, base, L, GraphicsMenuPatch().c_str(), "Graphics patch");
     static const bool trace = getenv("PGR4_TRACE_LUA_NIL") != nullptr;
     if (trace)
         Log("lua: run '%s' -> %d", name.c_str(), int32_t(ctx.r3.u32));
