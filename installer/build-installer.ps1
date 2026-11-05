@@ -23,3 +23,14 @@ $iscc = "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
 & $iscc "/DAppVersion=$Version" (Join-Path $PSScriptRoot "pgr4.iss")
 if ($LASTEXITCODE -ne 0) { throw "ISCC failed with $LASTEXITCODE" }
 Write-Host "Built: $PSScriptRoot\dist\PGR4-Setup-$Version.exe"
+
+# The patch zip the launcher's Updates tab installs: the same files, without SDL3.dll. The 0.1.6-0.1.8 launchers
+# hold it open (Controls tab) and their updater stops with "access denied" on a file in use; it never changes anyway.
+$stage = Join-Path $env:TEMP "pgr4patch"
+Remove-Item -Recurse -Force $stage -ErrorAction SilentlyContinue
+New-Item -ItemType Directory $stage | Out-Null
+Copy-Item "$payload\build", "$payload\launcher", "$payload\scripts\version.txt" $stage -Recurse
+Remove-Item "$stage\build\rel\SDL3.dll"
+tar -a -cf "$PSScriptRoot\dist\PGR4-$Version-patch.zip" -C $stage build launcher version.txt
+if ($LASTEXITCODE -ne 0) { throw "tar failed with $LASTEXITCODE" }
+Write-Host "Built: $PSScriptRoot\dist\PGR4-$Version-patch.zip"
