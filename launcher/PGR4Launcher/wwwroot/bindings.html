@@ -69,15 +69,16 @@
   <div class="bind-warn" id="nodev" hidden>No wheel, pedals or other controller found. Plug it in: this window picks it up within a couple of seconds.</div>
   <main class="bind-grid">
     <div class="bind-left">
-    <!-- Force feedback: hidden until PGR4 drives it (nothing in the game sends wheel forces yet). -->
-    <section class="panel" hidden>
+    <!-- Force feedback: PGR4's is its rumble, played on the wheel (src/input/wheel.cpp). Its springs have no
+         strength and it sends no steering force, so the spring and reverse controls stay hidden. -->
+    <section class="panel">
       <div class="panel-head"><h2>Force feedback</h2></div>
       <div class="ffb-grid">
-        <label class="field" data-tip="How strong every force is. Direct drive wheels are strong: start low and turn it up.">
+        <label class="field" data-tip="How strong the wheel's vibration is (the game's rumble: engine, kerbs, bumps and crashes). Direct drive wheels are strong: start low and turn it up.">
           <span>Strength</span>
           <select id="wheelStrength"></select>
         </label>
-        <label class="field" data-tip="The pull back to the centre and the damping, on top of the strength. The game made these for the weak motor of the Xbox 360 wheel; on a strong wheel less often feels more natural, with the steering force doing the work.">
+        <label class="field" hidden data-tip="The pull back to the centre and the damping, on top of the strength. The game made these for the weak motor of the Xbox 360 wheel; on a strong wheel less often feels more natural, with the steering force doing the work.">
           <span>Centring spring and damper</span>
           <select id="wheelSpring"></select>
         </label>
@@ -85,7 +86,7 @@
           <span>Wheel rotation</span>
           <select id="wheelRotation"></select>
         </label>
-        <div class="toggle-row" data-tip="Turn this on if the wheel pulls away from the centre in corners instead of back towards it.">
+        <div class="toggle-row" hidden data-tip="Turn this on if the wheel pulls away from the centre in corners instead of back towards it.">
           <div><div class="toggle-title">Reverse steering force</div><div class="toggle-sub">If the wheel pulls the wrong way</div></div>
           <button class="switch" id="wheelReverse" role="switch"></button>
         </div>

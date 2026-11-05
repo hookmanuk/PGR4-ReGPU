@@ -2,6 +2,7 @@
 #include <algorithm>
 
 #include "kernel/imports.h"
+#include "kernel/wheel_ff.h"
 #include "live_switch.h"
 #include "loader.h"
 
@@ -161,6 +162,13 @@ GUEST_EXPORT(XexGetModuleHandle)
         Return(ctx, X_STATUS_SUCCESS);
         return;
     }
+    // xboxkrnl.exe and xam.xex: for the wheel's force feedback calls only (kernel/wheel_ff.cpp).
+    if ((name == "xboxkrnl.exe" || name == "xam.xex") && WheelFfServed())
+    {
+        StoreBE32(ctx.r4.u32, name == "xam.xex" ? kXamModuleHandle : kKernelModuleHandle);
+        Return(ctx, X_STATUS_SUCCESS);
+        return;
+    }
     Log("XexGetModuleHandle(\"%s\"): module not available", name.c_str());
     StoreBE32(ctx.r4.u32, 0);
     Return(ctx, X_STATUS_NO_SUCH_FILE);
@@ -193,6 +201,12 @@ GUEST_EXPORT(XexGetModuleSection)
 
 GUEST_EXPORT(XexGetProcedureAddress)
 {
+    if (const uint32_t address = WheelFfProcedure(ctx.r3.u32, ctx.r4.u32, ctx.lr))
+    {
+        StoreIfNonNull(ctx.r5.u32, address);
+        Return(ctx, X_STATUS_SUCCESS);
+        return;
+    }
     Log("XexGetProcedureAddress(%08X, %u): not supported", ctx.r3.u32, ctx.r4.u32);
     StoreIfNonNull(ctx.r5.u32, 0);
     Return(ctx, X_STATUS_NOT_SUPPORTED);

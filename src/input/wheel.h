@@ -25,7 +25,12 @@ void WheelFfDefine(const wheel::Effect& e);
 void WheelFfOperate(uint32_t block, uint32_t op);
 void WheelFfControl(uint32_t command);
 void WheelFfDeviceGain(uint32_t gain);
-// Whether the player is driving, from the game (hooks/wheel_driving.cpp): forces fade out when not.
+// The game's rumble for the wheel (XInputdFFSetRumble: the 360 controller's two motor speeds), played as
+// vibration on the steering axis. PGR4's effects carry no steering force (zero-strength springs and
+// friction); its rumble is the wheel's feel.
+void WheelFfRumble(uint16_t low, uint16_t high);
+// Whether the player is driving, from the game (FM2 has a hook; PGR4 has none and counts as driving, its
+// rumble stopping by itself in menus): forces fade out when not.
 void WheelSetDriving(bool driving);
 
 // Controllers XInput doesn't see (DualSense, DualShock 4, Switch Pro and other DirectInput pads),

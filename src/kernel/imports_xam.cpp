@@ -16,6 +16,7 @@
 
 #include "input/wheel.h"
 #include "kernel/imports.h"
+#include "kernel/wheel_ff.h"
 #include "kernel/runtime.h"
 #include "kernel/thread.h"
 #include "kernel/vfs.h"
@@ -802,6 +803,14 @@ GUEST_EXPORT(XamInputGetCapabilities)
     memset(GuestPtr(caps), 0, 0x14);
     *GuestPtr<uint8_t>(caps + 0) = 1; // XINPUT_DEVTYPE_GAMEPAD
     *GuestPtr<uint8_t>(caps + 1) = 1; // XINPUT_DEVSUBTYPE_GAMEPAD
+    if (ctx.r3.u32 == 0 && (WheelFakeEnabled() || WheelRead().present))
+    {
+        // A racing wheel (or PGR4_FAKE_WHEEL) as an Xbox 360 wheel, with force feedback when it
+        // has some: the game then starts its XInputdFF* effects (kernel/wheel_ff.cpp).
+        *GuestPtr<uint8_t>(caps + 1) = 2; // XINPUT_DEVSUBTYPE_WHEEL
+        if (WheelFakeEnabled() || WheelHasForceFeedback())
+            *GuestPtr<uint8_t>(caps + 3) = 1; // flags (big-endian): XINPUT_CAPS_FFB_SUPPORTED
+    }
     Return(ctx, X_ERROR_SUCCESS);
 }
 

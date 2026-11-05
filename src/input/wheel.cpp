@@ -128,7 +128,13 @@ struct Driver
     float steering = 0;              // the eased steering force, -1 to 1
     steady_clock::time_point updated; // the game's last steering force
     float fade = 0;
-    bool driving = false; // from the game: off in menus, pauses and replays
+    bool driving = true; // from the game (FM2's hook): off in menus, pauses and replays; PGR4 has none
+    // The game's rumble (WheelFfRumble), 0-1 per motor, and its two vibrations on the wheel.
+    float rumbleLow = 0, rumbleHigh = 0;
+    steady_clock::time_point rumbled;
+    int rumbleFx[2] = { -1, -1 };
+    SDL_HapticEffect rumbleSent[2];
+    bool rumbleRunning[2] = {};
     steady_clock::time_point stoppedDriving; // when it last went off
 
     // From the settings when the thread starts.
@@ -570,6 +576,53 @@ bool Focused()
     return pid == GetCurrentProcessId();
 }
 
+// The game's rumble as two sine vibrations on the steering axis: the low motor's slow and heavy, the high
+// motor's fast and light. Scaled by the strength setting; kRumbleToForce keeps a full motor below a
+// jolt on a direct drive wheel.
+constexpr float kRumbleToForce = 0.35f;
+constexpr Uint16 kRumblePeriodMs[2] = { 50, 15 };
+void ApplyRumble(Driver& d)
+{
+    if (!(d.features & SDL_HAPTIC_SINE))
+        return;
+    for (int m = 0; m < 2; m++)
+    {
+        const float level = (m ? d.rumbleHigh : d.rumbleLow) * kRumbleToForce * d.strength * d.fade;
+        int& id = d.rumbleFx[m];
+        if (level < 0.005f)
+        {
+            if (id >= 0 && d.rumbleRunning[m])
+            {
+                SDL_StopHapticEffect(d.haptic, id);
+                d.rumbleRunning[m] = false;
+            }
+            continue;
+        }
+        SDL_HapticEffect fx;
+        memset(&fx, 0, sizeof(fx));
+        fx.type = SDL_HAPTIC_SINE;
+        fx.periodic.direction.type = SDL_HAPTIC_STEERING_AXIS;
+        fx.periodic.length = SDL_HAPTIC_INFINITY;
+        fx.periodic.period = kRumblePeriodMs[m];
+        fx.periodic.magnitude = Sint16(std::lround(std::min(level, 1.0f) * 32767.0f));
+        if (id < 0)
+        {
+            if ((id = SDL_CreateHapticEffect(d.haptic, &fx)) < 0)
+            {
+                static int warned = 0;
+                if (warned++ < 4)
+                    Log("wheel: the rumble vibration was refused: %s", SDL_GetError());
+                return;
+            }
+            d.rumbleSent[m] = fx;
+        }
+        else if (std::abs(fx.periodic.magnitude - d.rumbleSent[m].periodic.magnitude) >= 64 && SDL_UpdateHapticEffect(d.haptic, id, &fx))
+            d.rumbleSent[m] = fx;
+        if (!d.rumbleRunning[m])
+            d.rumbleRunning[m] = SDL_RunHapticEffect(d.haptic, id, SDL_HAPTIC_INFINITY);
+    }
+}
+
 // One of the game's blocks onto its SDL effect: created, updated, started or stopped.
 void Apply(Driver& d, uint32_t block, float dt)
 {
@@ -855,10 +908,12 @@ void Thread()
                 // The game also turns driving off and back on within a fraction of a millisecond every
                 // frame for a few seconds after a race loads; only an off that lasts counts.
                 const bool driving = d.driving || now - d.stoppedDriving < kDrivingOffAfter;
-                const bool live = driving && Focused() && now - d.updated < kStaleAfter;
+                // Live while the game updates its steering force (FM2) or its rumble (PGR4).
+                const bool live = driving && Focused() && (now - d.updated < kStaleAfter || now - d.rumbled < kStaleAfter);
                 d.fade = live ? std::min(1.0f, d.fade + dt / kFadeInSeconds) : std::max(0.0f, d.fade - dt / kFadeOutSeconds);
                 for (uint32_t b = 1; b <= wheel::kMaxBlocks; b++)
                     Apply(d, b, dt);
+                ApplyRumble(d);
             }
         }
         std::this_thread::sleep_until(now + milliseconds(2));
@@ -906,6 +961,14 @@ void WheelFfDefine(const wheel::Effect& e)
     g_wheel.game.Define(e);
     if (e.type == wheel::kConstant)
         g_wheel.updated = steady_clock::now();
+}
+
+void WheelFfRumble(uint16_t low, uint16_t high)
+{
+    std::lock_guard lock(g_wheel.mutex);
+    g_wheel.rumbleLow = low / 65535.0f;
+    g_wheel.rumbleHigh = high / 65535.0f;
+    g_wheel.rumbled = steady_clock::now();
 }
 
 void WheelFfOperate(uint32_t block, uint32_t op)
