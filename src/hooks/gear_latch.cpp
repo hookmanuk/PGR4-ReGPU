@@ -3,6 +3,7 @@
 // frame had a step; above 60 fps the press is often gone before the next one (40 taps: 40 shifts at 60 fps, 31 at 120,
 // 19 at 130). The press is held until a step takes it, or for 50 ms (3 steps): one made while the physics is stopped
 // is dropped. Both functions run on the physics thread. PGR4_NO_GEAR_LATCH=1: off.
+#include <atomic>
 #include <chrono>
 #include <cstdlib>
 
@@ -23,6 +24,7 @@ struct HeldPress
     std::chrono::steady_clock::time_point since;
 };
 HeldPress g_held[4];
+std::atomic<int64_t> g_lastPadDrive{ 0 };
 
 LiveSwitch& NoGearLatch()
 {
@@ -36,7 +38,10 @@ PPC_FUNC(sub_822DC420)
 {
     const uint32_t controls = ctx.r3.u32, pad = ctx.r4.u32 & 0xFF;
     __imp__sub_822DC420(ctx, base);
-    if (pad >= 4 || NoGearLatch())
+    if (pad >= 4)
+        return;
+    g_lastPadDrive.store(std::chrono::steady_clock::now().time_since_epoch().count(), std::memory_order_relaxed);
+    if (NoGearLatch())
         return;
     HeldPress& held = g_held[pad];
     uint8_t* const up = GuestPtr<uint8_t>(controls + 16);
@@ -77,4 +82,12 @@ PPC_FUNC(sub_822DE628)
     for (HeldPress& held : g_held)
         if (held.controls == controls)
             held.up = held.down = 0;
+}
+
+// Whether a player's pad is driving a car (a race): its controls update every frame then. The menus' background
+// cars are not driven by a pad.
+bool CarsDriving()
+{
+    const auto last = std::chrono::steady_clock::time_point(std::chrono::steady_clock::duration(g_lastPadDrive.load(std::memory_order_relaxed)));
+    return std::chrono::steady_clock::now() - last < std::chrono::milliseconds(200);
 }

@@ -814,6 +814,62 @@ GUEST_EXPORT(XamInputGetCapabilities)
     Return(ctx, X_ERROR_SUCCESS);
 }
 
+bool CarsDriving(); // hooks/gear_latch.cpp
+
+// Menus: a held direction (D-pad or left stick) moves once, then waits kMenuHoldDelay before the game's own
+// auto-repeat may start: it reads as released until then. The game counts its repeat delay in frames, so at
+// high frame rates one press moved several items. Off while the cars drive (steering, D-pad in a race).
+// PGR4_MENU_HOLD_MS=<ms> changes the delay (0: off).
+static void MenuHoldDelay(uint32_t user, PadState& s)
+{
+    static const int delayMs = getenv("PGR4_MENU_HOLD_MS") ? atoi(getenv("PGR4_MENU_HOLD_MS")) : 500;
+    if (user >= XUSER_MAX_COUNT || delayMs <= 0)
+        return;
+    using Clock = std::chrono::steady_clock;
+    constexpr int16_t kStick = 16000;
+    enum { Up, Down, Left, Right, Count };
+    static Clock::time_point since[XUSER_MAX_COUNT][Count];
+    static bool held[XUSER_MAX_COUNT][Count];
+    const bool on[Count] = {
+        (s.buttons & XINPUT_GAMEPAD_DPAD_UP) || s.ly > kStick,
+        (s.buttons & XINPUT_GAMEPAD_DPAD_DOWN) || s.ly < -kStick,
+        (s.buttons & XINPUT_GAMEPAD_DPAD_LEFT) || s.lx < -kStick,
+        (s.buttons & XINPUT_GAMEPAD_DPAD_RIGHT) || s.lx > kStick,
+    };
+    const auto now = Clock::now();
+    const bool driving = CarsDriving();
+    static bool wasDriving = false;
+    if (driving != wasDriving)
+    {
+        wasDriving = driving;
+        Log("input: menu hold delay %s", driving ? "off (driving)" : "on");
+    }
+    for (int d = 0; d < Count; d++)
+    {
+        if (!on[d])
+        {
+            held[user][d] = false;
+            continue;
+        }
+        if (!held[user][d])
+        {
+            held[user][d] = true;
+            since[user][d] = now;
+        }
+        // The press's first 40 ms go through (a frame or two, at any frame rate); the rest of the delay
+        // reads as released.
+        const auto held_for = now - since[user][d];
+        if (driving || held_for < std::chrono::milliseconds(40) || held_for >= std::chrono::milliseconds(delayMs))
+            continue;
+        static const uint16_t bit[Count] = { XINPUT_GAMEPAD_DPAD_UP, XINPUT_GAMEPAD_DPAD_DOWN, XINPUT_GAMEPAD_DPAD_LEFT, XINPUT_GAMEPAD_DPAD_RIGHT };
+        s.buttons &= ~bit[d];
+        if (d == Up || d == Down)
+            s.ly = 0;
+        else
+            s.lx = 0;
+    }
+}
+
 GUEST_EXPORT(XamInputGetState)
 {
     // (user, flags, XINPUT_STATE*): packet, buttons, triggers, sticks (big-endian).
@@ -831,6 +887,7 @@ GUEST_EXPORT(XamInputGetState)
         if (std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count() >= lookBack)
             s.ry = -32767;
     }
+    MenuHoldDelay(ctx.r3.u32, s);
     static std::atomic<uint32_t> packet{ 0 };
     const uint32_t state = ctx.r5.u32;
     StoreBE32(state, ++packet);
